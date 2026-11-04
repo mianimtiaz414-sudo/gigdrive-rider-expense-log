@@ -2,7 +2,7 @@ import 'package:get/get.dart';
 import 'package:get/get_connect/http/src/request/request.dart';
 
 class ApiService extends GetConnect {
-  static const String apiBaseUrl = 'https:
+  static const String apiBaseUrl = 'https://api.riderledger.app/v1';
 
   @override
   void onInit() {

@@ -1,5 +1,5 @@
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:intl/intl.dart';
@@ -17,7 +17,12 @@ class ExpenseViewModel extends GetxController {
   final ExpenseRepository _repository;
   final SettingsViewModel _settings;
 
-  
+  BannerAd? myBanner;
+  final RxBool isAdLoaded = false.obs;
+
+  InterstitialAd? _interstitialAd;
+  bool _isInterstitialAdReady = false;
+
   final RxList<ExpenseModel> logs = <ExpenseModel>[].obs;
   final RxList<ExpenseModel> monthLogs = <ExpenseModel>[].obs;
   final Rx<DateTime> selectedMonth = _monthOf(DateTime.now()).obs;
@@ -26,13 +31,11 @@ class ExpenseViewModel extends GetxController {
   final RxDouble totalExpenses = 0.0.obs;
   final RxDouble netProfit = 0.0.obs;
 
-  
   final RxBool isLoading = false.obs;
   final RxBool isSaving = false.obs;
   final RxBool isSyncing = false.obs;
   final RxBool isExporting = false.obs;
 
-  
   final Rx<DateTime> selectedDate = _dayOf(DateTime.now()).obs;
   final TextEditingController earningsCtrl = TextEditingController();
   final TextEditingController fuelCtrl = TextEditingController();
@@ -54,6 +57,8 @@ class ExpenseViewModel extends GetxController {
       (dynamic _) => _recompute(),
     );
     loadLogs();
+    loadBannerAd();
+    loadInterstitialAd();
   }
 
   @override
@@ -71,17 +76,72 @@ class ExpenseViewModel extends GetxController {
     fuelCtrl.dispose();
     repairsCtrl.dispose();
     mileageCtrl.dispose();
+    myBanner?.dispose();
+    _interstitialAd?.dispose();
     super.onClose();
   }
 
-  
+  void loadBannerAd() {
+    myBanner = BannerAd(
+      adUnitId: 'ca-app-pub-2175738720080309/4304611395',
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdLoaded: (ad) {
+          isAdLoaded.value = true;
+        },
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+          isAdLoaded.value = false;
+        },
+      ),
+    );
+    myBanner!.load();
+  }
+
+  void loadInterstitialAd() {
+    InterstitialAd.load(
+      adUnitId: 'ca-app-pub-2175738720080309/8052284713',
+      request: const AdRequest(),
+      adLoadCallback: InterstitialAdLoadCallback(
+        onAdLoaded: (ad) {
+          _interstitialAd = ad;
+          _isInterstitialAdReady = true;
+        },
+        onAdFailedToLoad: (LoadAdError error) {
+          _isInterstitialAdReady = false;
+          _interstitialAd = null;
+        },
+      ),
+    );
+  }
+
+  void showInterstitialAd({required Function onAdDismissed}) {
+    if (_isInterstitialAdReady && _interstitialAd != null) {
+      _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
+        onAdDismissedFullScreenContent: (ad) {
+          ad.dispose();
+          loadInterstitialAd();
+          onAdDismissed();
+        },
+        onAdFailedToShowFullScreenContent: (ad, error) {
+          ad.dispose();
+          loadInterstitialAd();
+          onAdDismissed();
+        },
+      );
+      _interstitialAd!.show();
+    } else {
+      onAdDismissed();
+    }
+  }
+
   String get _localeTag => Get.locale?.toString() ?? 'en';
 
   String _fmt(String pattern, DateTime date) {
     return DateFormat(pattern, _localeTag).format(date);
   }
 
-  
   String get currencyPrefix => _settings.currencySymbol;
 
   String formatMoney(double value) {
@@ -91,7 +151,6 @@ class ExpenseViewModel extends GetxController {
       decimalDigits: 2,
     );
     final String sign = value < 0 ? '-' : '';
-    
     return '\u200E$sign${f.format(value.abs())}';
   }
 
@@ -113,7 +172,6 @@ class ExpenseViewModel extends GetxController {
     return selectedMonth.value.isBefore(current);
   }
 
-  
   void previousMonth() {
     final DateTime m = selectedMonth.value;
     selectedMonth.value = DateTime(m.year, m.month - 1);
@@ -127,7 +185,6 @@ class ExpenseViewModel extends GetxController {
     selectedMonth.value = DateTime(m.year, m.month + 1);
   }
 
-  
   void loadLogs() {
     isLoading.value = true;
     try {
@@ -170,7 +227,6 @@ class ExpenseViewModel extends GetxController {
     }
   }
 
-  
   void resetForm() {
     earningsCtrl.clear();
     fuelCtrl.clear();
@@ -179,7 +235,6 @@ class ExpenseViewModel extends GetxController {
     selectedDate.value = _dayOf(DateTime.now());
   }
 
-  
   String? validateNumber(String? value, String labelKey) {
     final String text = value?.trim() ?? '';
     final String label = labelKey.tr;
@@ -243,7 +298,7 @@ class ExpenseViewModel extends GetxController {
       await _repository.addLog(log, onSynced: loadLogs);
       loadLogs();
       selectedMonth.value = _monthOf(log.date);
-      Get.back<void>();
+      Get.back();
       AppFeedback.show('saved'.tr, 'log_added'.tr);
     } catch (e) {
       AppFeedback.show('could_not_save'.tr, e.toString(), isError: true);
@@ -252,10 +307,6 @@ class ExpenseViewModel extends GetxController {
     }
   }
 
-  
-  
-  
-  
   Future<void> exportDataToPdf() async {
     if (isExporting.value) {
       return;
@@ -292,9 +343,7 @@ class ExpenseViewModel extends GetxController {
     }
   }
 
-  
-  
-  Future<void> syncWithCloud({bool silent = false}) async {
+  Future syncWithCloud({bool silent = false}) async {
     if (!_repository.isCloudReady) {
       if (!silent) {
         AppFeedback.show('sign_in_required'.tr, 'sign_in_required_msg'.tr,
@@ -329,10 +378,7 @@ class ExpenseViewModel extends GetxController {
     }
   }
 
-  
-  
-  
-  Future<bool> backupAndClearLocalData() async {
+  Future backupAndClearLocalData() async {
     if (_repository.isCloudReady) {
       await _repository.syncPending();
     }

@@ -1,3 +1,5 @@
+import 'package:google_mobile_ads/google_mobile_ads.dart';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
@@ -26,7 +28,6 @@ class DashboardView extends StatelessWidget {
           overflow: TextOverflow.ellipsis,
         ),
         actions: <Widget>[
-          
           Obx(() => IconButton(
                 tooltip: 'export_pdf'.tr,
                 onPressed: vm.isExporting.value ? null : vm.exportDataToPdf,
@@ -65,7 +66,6 @@ class DashboardView extends StatelessWidget {
               onPressed: showCloudSheet,
             );
           }),
-          
           Obx(() {
             if (!settings.lockEnabled.value) {
               return const SizedBox.shrink();
@@ -95,6 +95,17 @@ class DashboardView extends StatelessWidget {
           style: const TextStyle(fontWeight: FontWeight.w700),
         ),
       ),
+      bottomNavigationBar: Obx(() {
+        return vm.isAdLoaded.value && vm.myBanner != null
+            ? Container(
+                alignment: Alignment.center,
+                width: vm.myBanner!.size.width.toDouble(),
+                height: vm.myBanner!.size.height.toDouble(),
+                child: AdWidget(ad: vm.myBanner!),
+              )
+            : const SizedBox
+                .shrink(); // Agar ad load na ho toh jagah khali rahegi
+      }),
       body: Column(
         children: <Widget>[
           _MonthSelector(vm: vm),
@@ -395,12 +406,6 @@ class _EmptyState extends StatelessWidget {
   }
 }
 
-
-
-
-
-
-
 class _LogTile extends StatelessWidget {
   const _LogTile({super.key, required this.log, required this.vm});
 
@@ -462,7 +467,6 @@ class _LogTile extends StatelessWidget {
           ),
           child: Row(
             children: <Widget>[
-              
               Container(
                 width: 52,
                 padding: const EdgeInsets.symmetric(vertical: 8, horizontal: 2),
@@ -496,8 +500,6 @@ class _LogTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 12),
-
-              
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
@@ -562,8 +564,6 @@ class _LogTile extends StatelessWidget {
                 ),
               ),
               const SizedBox(width: 8),
-
-              
               ConstrainedBox(
                 constraints: BoxConstraints(maxWidth: amountsMaxWidth),
                 child: Column(

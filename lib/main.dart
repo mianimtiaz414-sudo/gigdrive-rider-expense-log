@@ -1,3 +1,6 @@
+import 'dart:async';
+
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
@@ -15,6 +18,7 @@ import 'package:rider_expense_tracker/routes/app_routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  unawaited(MobileAds.instance.initialize());
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -26,15 +30,12 @@ Future<void> main() async {
     DeviceOrientation.portraitUp,
   ]);
 
-  
   await initializeDateFormatting();
 
-  
   await SharedPrefs.init();
   final HiveStorageService hive = await HiveStorageService().init();
   Get.put<HiveStorageService>(hive, permanent: true);
 
-  
   try {
     await Firebase.initializeApp();
   } catch (e) {
@@ -55,7 +56,6 @@ class RiderExpenseApp extends StatelessWidget {
       theme: AppTheme.dark,
       darkTheme: AppTheme.dark,
       themeMode: ThemeMode.dark,
-      
       translations: AppTranslations(),
       locale: TranslationService.localeFor(SharedPrefs.languageCode),
       fallbackLocale: TranslationService.fallbackLocale,
