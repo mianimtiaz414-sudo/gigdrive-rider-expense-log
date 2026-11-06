@@ -1,18 +1,47 @@
+import 'dart:convert';
+import 'dart:typed_data';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 import 'package:hive_flutter/hive_flutter.dart';
 import 'package:rider_expense_tracker/data/models/expense_model.dart';
 
 class HiveStorageService {
   static const String expenseBoxName = 'expense_logs';
+  static const _secureStorage = FlutterSecureStorage();
+  static const _keyName = 'hive_encryption_key';
 
   late Box<ExpenseModel> _box;
 
   Future<HiveStorageService> init() async {
     await Hive.initFlutter();
+
     if (!Hive.isAdapterRegistered(0)) {
       Hive.registerAdapter(ExpenseModelAdapter());
     }
-    _box = await Hive.openBox<ExpenseModel>(expenseBoxName);
+
+    final encryptionKey = await _getOrCreateEncryptionKey();
+
+    _box = await Hive.openBox<ExpenseModel>(
+      expenseBoxName,
+      encryptionCipher: HiveAesCipher(encryptionKey),
+    );
+
     return this;
+  }
+
+  Future<Uint8List> _getOrCreateEncryptionKey() async {
+    final containsKey = await _secureStorage.containsKey(key: _keyName);
+
+    if (!containsKey) {
+      final secureKey = Hive.generateSecureKey();
+      await _secureStorage.write(
+        key: _keyName,
+        value: base64Url.encode(secureKey), // Fixed syntax
+      );
+      return Uint8List.fromList(secureKey);
+    }
+
+    final base64Key = await _secureStorage.read(key: _keyName);
+    return Uint8List.fromList(base64Url.decode(base64Key!));
   }
 
   List<ExpenseModel> getAllLogs() {

@@ -18,7 +18,11 @@ import 'package:rider_expense_tracker/routes/app_routes.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  unawaited(MobileAds.instance.initialize());
+  try {
+    await MobileAds.instance.initialize();
+  } catch (e) {
+    debugPrint('Google Mobile Ads SDK initialization failed: $e');
+  }
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -26,20 +30,20 @@ Future<void> main() async {
     systemNavigationBarColor: AppColors.background,
     systemNavigationBarIconBrightness: Brightness.light,
   ));
+
   await SystemChrome.setPreferredOrientations(<DeviceOrientation>[
     DeviceOrientation.portraitUp,
   ]);
 
   await initializeDateFormatting();
-
   await SharedPrefs.init();
   final HiveStorageService hive = await HiveStorageService().init();
   Get.put<HiveStorageService>(hive, permanent: true);
-
   try {
     await Firebase.initializeApp();
   } catch (e) {
-    debugPrint('Firebase initialization skipped: $e');
+    debugPrint(
+        'Firebase initialization skipped or network layer unreachable: $e');
   }
 
   runApp(const RiderExpenseApp());
