@@ -1,11 +1,13 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/data/models/app_language.dart';
 import 'package:rider_expense_tracker/data/models/country_currency.dart';
-import 'package:rider_expense_tracker/routes/app_routes.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
+import 'package:rider_expense_tracker/views/wigdets/pin_widgets.dart';
 import 'package:rider_expense_tracker/views/wigdets/searchable_picker.dart';
 
 class SetupWizardView extends StatefulWidget {
@@ -16,99 +18,132 @@ class SetupWizardView extends StatefulWidget {
 }
 
 class _SetupWizardViewState extends State<SetupWizardView> {
+  static const int _lastStep = 2;
   static const int _totalSteps = 3;
 
   final SettingsViewModel _settings = Get.find<SettingsViewModel>();
-  final PageController _pages = PageController();
-  final RxInt _step = 0.obs;
+  final AuthViewModel _auth = Get.find<AuthViewModel>();
+  late final RxInt _step;
+  bool _busy = false;
+  bool _finishing = false;
 
   @override
-  void dispose() {
-    _pages.dispose();
-    super.dispose();
+  void initState() {
+    super.initState();
+    final int saved = _settings.setupStep.clamp(0, _lastStep).toInt();
+    _step = saved.obs;
+    if (saved == _lastStep) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          _auth.startPinFlow(PinPurpose.setupCreate);
+        }
+      });
+    }
   }
 
-  void _goToStep(int step) {
+  void _goTo(int step) {
+    FocusManager.instance.primaryFocus?.unfocus();
+    if (step == _lastStep) {
+      _auth.startPinFlow(PinPurpose.setupCreate);
+    }
     _step.value = step;
-    _pages.animateToPage(
-      step,
-      duration: const Duration(milliseconds: 320),
-      curve: Curves.easeInOut,
-    );
+    unawaited(_settings.saveSetupStep(step));
   }
 
   void _next() {
-    FocusManager.instance.primaryFocus?.unfocus();
-    if (_step.value < _totalSteps - 1) {
-      _goToStep(_step.value + 1);
+    if (_step.value < _lastStep) {
+      _goTo(_step.value + 1);
     }
   }
 
   void _previous() {
-    FocusManager.instance.primaryFocus?.unfocus();
     if (_step.value > 0) {
-      _goToStep(_step.value - 1);
+      _goTo(_step.value - 1);
     }
   }
 
-  Future<void> _skip() async {
-    FocusManager.instance.primaryFocus?.unfocus();
-    switch (_step.value) {
-      case 0:
+  Future<void> _skipStep() async {
+    if (_busy) {
+      return;
+    }
+    _busy = true;
+    try {
+      if (_step.value == 0) {
         await _settings.setLanguage(AppLanguages.english);
         _next();
-        break;
-      case 1:
+      } else if (_step.value == 1) {
         await _settings.setCurrency(CurrencyCatalog.defaultOption);
         _next();
-        break;
-      default:
-        await _settings.skipSecurityAndFinish();
-        break;
+      }
+    } finally {
+      _busy = false;
     }
   }
 
-  void _startPinSetup() {
-    Get.toNamed<bool>(
-      AppRoutes.setPasscode,
-      arguments: PinPurpose.setupCreate,
-    );
+  Future<void> _finishWithoutPin() async {
+    if (_finishing) {
+      return;
+    }
+    _finishing = true;
+    try {
+      await _settings.skipSecurityAndFinish();
+    } finally {
+      _finishing = false;
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final bool keyboardOpen = MediaQuery.of(context).viewInsets.bottom > 0;
-    return Scaffold(
-      resizeToAvoidBottomInset: true,
-      body: SafeArea(
-        child: Column(
-          children: <Widget>[
-            _buildTopBar(),
-            _buildProgress(),
-            Expanded(
-              child: PageView(
-                controller: _pages,
-                physics: const NeverScrollableScrollPhysics(),
-                children: <Widget>[
-                  _buildLanguageStep(keyboardOpen),
-                  _buildCurrencyStep(keyboardOpen),
-                  _buildSecurityStep(),
-                ],
-              ),
-            ),
-            if (!keyboardOpen) _buildActions(),
-          ],
+    return PopScope(
+      canPop: false,
+      onPopInvokedWithResult: (bool didPop, Object? result) {
+        if (!didPop) {
+          _previous();
+        }
+      },
+      child: Scaffold(
+        resizeToAvoidBottomInset: true,
+        body: SafeArea(
+          child: Obx(() {
+            final int step = _step.value;
+            return Column(
+              children: <Widget>[
+                _buildTopBar(step),
+                _buildProgress(step),
+                Expanded(
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 220),
+                    layoutBuilder: (Widget? current, List<Widget> previous) {
+                      return Stack(
+                        fit: StackFit.expand,
+                        children: <Widget>[
+                          ...previous,
+                          if (current != null) current,
+                        ],
+                      );
+                    },
+                    child: KeyedSubtree(
+                      key: ValueKey<int>(step),
+                      child: _buildStep(step, keyboardOpen),
+                    ),
+                  ),
+                ),
+                if (step != _lastStep && !keyboardOpen) _buildContinue(),
+              ],
+            );
+          }),
         ),
       ),
     );
   }
 
-  Widget _buildTopBar() {
+  Widget _buildTopBar(int step) {
     return Padding(
       padding: const EdgeInsetsDirectional.fromSTEB(8, 8, 8, 0),
-      child: Obx(() {
-        final int step = _step.value;
-        return Row(
+      child: SizedBox(
+        height: 48,
+        child: Row(
           children: <Widget>[
             SizedBox(
               width: 72,
@@ -136,193 +171,232 @@ class _SetupWizardViewState extends State<SetupWizardView> {
               width: 72,
               child: Align(
                 alignment: AlignmentDirectional.centerEnd,
-                child: TextButton(
-                  onPressed: _skip,
-                  child: Text(
-                    'skip'.tr,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                  ),
-                ),
+                child: step < _lastStep
+                    ? TextButton(
+                        onPressed: _skipStep,
+                        child: Text(
+                          'skip'.tr,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      )
+                    : null,
               ),
             ),
-          ],
-        );
-      }),
-    );
-  }
-
-  Widget _buildProgress() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
-      child: Obx(() {
-        final int step = _step.value;
-        return Row(
-          children: List<Widget>.generate(_totalSteps, (int i) {
-            return Expanded(
-              child: AnimatedContainer(
-                duration: const Duration(milliseconds: 250),
-                height: 4,
-                margin: const EdgeInsets.symmetric(horizontal: 4),
-                decoration: BoxDecoration(
-                  color: i <= step ? AppColors.primary : AppColors.divider,
-                  borderRadius: BorderRadius.circular(4),
-                ),
-              ),
-            );
-          }),
-        );
-      }),
-    );
-  }
-
-  Widget _buildLanguageStep(bool keyboardOpen) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        children: <Widget>[
-          if (!keyboardOpen)
-            _StepHeader(
-              icon: Icons.translate_rounded,
-              title: 'setup_language_title'.tr,
-              subtitle: 'setup_language_sub'.tr,
-            ),
-          Expanded(
-            child: Obx(() => SearchablePicker(
-                  options: PickerCatalog.languages,
-                  selectedId: _settings.languageCode.value,
-                  hintText: 'search_language'.tr,
-                  onSelected: (String code) =>
-                      _settings.setLanguage(AppLanguages.byCode(code)),
-                )),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCurrencyStep(bool keyboardOpen) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 20),
-      child: Column(
-        children: <Widget>[
-          if (!keyboardOpen)
-            _StepHeader(
-              icon: Icons.currency_exchange_rounded,
-              title: 'setup_currency_title'.tr,
-              subtitle: 'setup_currency_sub'.tr,
-            ),
-          Expanded(
-            child: Obx(() => SearchablePicker(
-                  options: PickerCatalog.currencies,
-                  selectedId: _settings.currencyCountry.value,
-                  hintText: 'search_currency'.tr,
-                  onSelected: (String countryCode) => _settings
-                      .setCurrency(CurrencyCatalog.byCountry(countryCode)),
-                )),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSecurityStep() {
-    return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 24),
-      child: SingleChildScrollView(
-        child: Column(
-          children: <Widget>[
-            const SizedBox(height: 24),
-            Container(
-              width: 120,
-              height: 120,
-              decoration: BoxDecoration(
-                shape: BoxShape.circle,
-                color: AppColors.surface,
-                border: Border.all(color: AppColors.primaryBorder, width: 2),
-                boxShadow: const <BoxShadow>[
-                  BoxShadow(
-                    color: AppColors.primaryGlow,
-                    blurRadius: 40,
-                    spreadRadius: 2,
-                  ),
-                ],
-              ),
-              child: const Icon(
-                Icons.shield_outlined,
-                size: 58,
-                color: AppColors.primary,
-              ),
-            ),
-            const SizedBox(height: 32),
-            Text(
-              'setup_security_title'.tr,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 24,
-                height: 1.3,
-                fontWeight: FontWeight.w800,
-                color: AppColors.textPrimary,
-              ),
-            ),
-            const SizedBox(height: 12),
-            Text(
-              'setup_security_sub'.tr,
-              textAlign: TextAlign.center,
-              style: const TextStyle(
-                fontSize: 15,
-                color: AppColors.textSecondary,
-              ),
-            ),
-            const SizedBox(height: 28),
-            _Bullet(icon: Icons.wifi_off_rounded, text: 'sec_point_1'.tr),
-            const SizedBox(height: 12),
-            _Bullet(icon: Icons.tune_rounded, text: 'sec_point_2'.tr),
-            const SizedBox(height: 16),
           ],
         ),
       ),
     );
   }
 
-  Widget _buildActions() {
+  Widget _buildProgress(int step) {
     return Padding(
-      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
-      child: Obx(() {
-        if (_step.value < _totalSteps - 1) {
-          return ElevatedButton(
-            onPressed: _next,
-            child: Text(
-              'continue_btn'.tr,
-              maxLines: 1,
-              overflow: TextOverflow.ellipsis,
+      padding: const EdgeInsets.fromLTRB(20, 8, 20, 12),
+      child: Row(
+        children: List<Widget>.generate(_totalSteps, (int i) {
+          return Expanded(
+            child: AnimatedContainer(
+              duration: const Duration(milliseconds: 250),
+              height: 4,
+              margin: const EdgeInsets.symmetric(horizontal: 4),
+              decoration: BoxDecoration(
+                color: i <= step ? AppColors.primary : AppColors.divider,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
           );
-        }
-        return Column(
-          mainAxisSize: MainAxisSize.min,
-          children: <Widget>[
-            ElevatedButton.icon(
-              onPressed: _startPinSetup,
-              icon: const Icon(Icons.pin_outlined),
-              label: Text(
-                'set_pin'.tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton(
-              onPressed: _skip,
-              child: Text(
-                'skip_for_now'.tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          ],
+        }),
+      ),
+    );
+  }
+
+  Widget _buildStep(int step, bool keyboardOpen) {
+    switch (step) {
+      case 0:
+        return _buildPickerStep(
+          keyboardOpen: keyboardOpen,
+          icon: Icons.translate_rounded,
+          title: 'setup_language_title'.tr,
+          subtitle: 'setup_language_sub'.tr,
+          picker: Obx(() => SearchablePicker(
+                options: PickerCatalog.languages,
+                selectedId: _settings.languageCode.value,
+                hintText: 'search_language'.tr,
+                onSelected: (String code) =>
+                    _settings.setLanguage(AppLanguages.byCode(code)),
+              )),
         );
-      }),
+      case 1:
+        return _buildPickerStep(
+          keyboardOpen: keyboardOpen,
+          icon: Icons.currency_exchange_rounded,
+          title: 'setup_currency_title'.tr,
+          subtitle: 'setup_currency_sub'.tr,
+          picker: Obx(() => SearchablePicker(
+                options: PickerCatalog.currencies,
+                selectedId: _settings.currencyCountry.value,
+                hintText: 'search_currency'.tr,
+                onSelected: (String countryCode) => _settings
+                    .setCurrency(CurrencyCatalog.byCountry(countryCode)),
+              )),
+        );
+      default:
+        return _buildSecurityStep();
+    }
+  }
+
+  Widget _buildPickerStep({
+    required bool keyboardOpen,
+    required IconData icon,
+    required String title,
+    required String subtitle,
+    required Widget picker,
+  }) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
+      child: Column(
+        children: <Widget>[
+          if (!keyboardOpen)
+            _StepHeader(icon: icon, title: title, subtitle: subtitle),
+          Expanded(child: picker),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildSecurityStep() {
+    return LayoutBuilder(
+      builder: (BuildContext context, BoxConstraints box) {
+        final double keySize =
+            ((box.maxHeight - 380) / 4.4).clamp(44.0, 74.0).toDouble();
+        return SingleChildScrollView(
+          padding: const EdgeInsets.symmetric(horizontal: 24),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(minHeight: box.maxHeight),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: <Widget>[
+                const SizedBox(height: 8),
+                Container(
+                  width: 68,
+                  height: 68,
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: AppColors.primarySoft,
+                    boxShadow: <BoxShadow>[
+                      BoxShadow(color: AppColors.primaryGlow, blurRadius: 30),
+                    ],
+                  ),
+                  child: const Icon(
+                    Icons.shield_outlined,
+                    color: AppColors.primary,
+                    size: 32,
+                  ),
+                ),
+                const SizedBox(height: 14),
+                Text(
+                  'setup_security_title'.tr,
+                  textAlign: TextAlign.center,
+                  style: const TextStyle(
+                    fontSize: 20,
+                    height: 1.3,
+                    fontWeight: FontWeight.w800,
+                    color: AppColors.textPrimary,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                Obx(() {
+                  final String error = _auth.errorText.value;
+                  return Column(
+                    mainAxisSize: MainAxisSize.min,
+                    children: <Widget>[
+                      Text(
+                        _auth.title,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 17,
+                          fontWeight: FontWeight.w700,
+                          color: AppColors.primary,
+                        ),
+                      ),
+                      const SizedBox(height: 4),
+                      Text(
+                        _auth.subtitle,
+                        textAlign: TextAlign.center,
+                        style: const TextStyle(
+                          fontSize: 14,
+                          color: AppColors.textSecondary,
+                        ),
+                      ),
+                      const SizedBox(height: 18),
+                      PinDots(
+                        length: _auth.pin.value.length,
+                        hasError: error.isNotEmpty,
+                      ),
+                      const SizedBox(height: 12),
+                      SizedBox(
+                        height: 22,
+                        child: Text(
+                          error,
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            color: AppColors.expense,
+                            fontSize: 14,
+                            fontWeight: FontWeight.w500,
+                          ),
+                        ),
+                      ),
+                    ],
+                  );
+                }),
+                const SizedBox(height: 10),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 16),
+                  child: PinKeypad(
+                    onDigit: _auth.onDigit,
+                    onBackspace: _auth.deleteLastDigit,
+                    size: keySize,
+                    rowGap: keySize * 0.2,
+                  ),
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    onPressed: _finishWithoutPin,
+                    icon: const Icon(Icons.arrow_forward_rounded),
+                    label: Text(
+                      'skip_security_finish'.tr,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
+                  ),
+                ),
+                const SizedBox(height: 16),
+              ],
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildContinue() {
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(24, 12, 24, 24),
+      child: SizedBox(
+        width: double.infinity,
+        child: ElevatedButton(
+          onPressed: _next,
+          child: Text(
+            'continue_btn'.tr,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+          ),
+        ),
+      ),
     );
   }
 }
@@ -379,40 +453,6 @@ class _StepHeader extends StatelessWidget {
                   ),
                 ),
               ],
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _Bullet extends StatelessWidget {
-  const _Bullet({required this.icon, required this.text});
-
-  final IconData icon;
-  final String text;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.all(14),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Row(
-        children: <Widget>[
-          Icon(icon, color: AppColors.primary, size: 22),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Text(
-              text,
-              style: const TextStyle(
-                fontSize: 14.5,
-                color: AppColors.textPrimary,
-              ),
             ),
           ),
         ],

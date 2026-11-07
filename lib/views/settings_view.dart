@@ -3,9 +3,9 @@ import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/data/models/app_language.dart';
 import 'package:rider_expense_tracker/data/models/country_currency.dart';
-import 'package:rider_expense_tracker/routes/app_routes.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
+import 'package:rider_expense_tracker/views/lock_passcode_view.dart';
 import 'package:rider_expense_tracker/views/selection_picker_view.dart';
 import 'package:rider_expense_tracker/views/wigdets/cloud_sheet.dart';
 import 'package:rider_expense_tracker/views/wigdets/pin_prompt_sheet.dart';
@@ -14,42 +14,39 @@ import 'package:rider_expense_tracker/views/wigdets/searchable_picker.dart';
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
 
-  Future<void> _pickLanguage(SettingsViewModel vm) async {
+  Future<void> _pickLanguage(SettingsViewModel controller) async {
     final String? code = await openPickerScreen(
       title: 'language'.tr,
       hintText: 'search_language'.tr,
       options: PickerCatalog.languages,
-      selectedId: vm.languageCode.value,
+      selectedId: controller.languageCode.value,
     );
     if (code != null) {
-      await vm.setLanguage(AppLanguages.byCode(code));
+      await controller.setLanguage(AppLanguages.byCode(code));
     }
   }
 
-  Future<void> _pickCurrency(SettingsViewModel vm) async {
+  Future<void> _pickCurrency(SettingsViewModel controller) async {
     final String? countryCode = await openPickerScreen(
       title: 'currency'.tr,
       hintText: 'search_currency'.tr,
       options: PickerCatalog.currencies,
-      selectedId: vm.currencyCountry.value,
+      selectedId: controller.currencyCountry.value,
     );
     if (countryCode != null) {
-      await vm.setCurrency(CurrencyCatalog.byCountry(countryCode));
+      await controller.setCurrency(CurrencyCatalog.byCountry(countryCode));
     }
   }
 
-  
-  
-  
-  Future<void> _onLockToggle(bool wantOn) async {
-    if (wantOn) {
-      await Get.toNamed<bool>(
-        AppRoutes.setPasscode,
-        arguments: PinPurpose.settingsEnable,
-      );
-      return;
-    }
-    await Get.bottomSheet<bool>(
+  void _openPinScreen(PinPurpose purpose) {
+    Get.to(
+      () => LockPasscodeView(purpose: purpose),
+      transition: Transition.rightToLeft,
+    );
+  }
+
+  void _openDisablePrompt() {
+    Get.bottomSheet(
       const PinPromptSheet(),
       isScrollControlled: true,
       backgroundColor: AppColors.surface,
@@ -59,15 +56,14 @@ class SettingsView extends StatelessWidget {
     );
   }
 
-  void _changePin() {
-    Get.toNamed<bool>(
-      AppRoutes.setPasscode,
-      arguments: PinPurpose.settingsChange,
-    );
+  void _onLockToggle(bool wantOn) {
+    if (wantOn) {
+      _openPinScreen(PinPurpose.settingsEnable);
+    } else {
+      _openDisablePrompt();
+    }
   }
 
-  
-  
   void _confirmAccountAction({
     required AuthViewModel auth,
     required String titleKey,
@@ -75,7 +71,7 @@ class SettingsView extends StatelessWidget {
     required String confirmKey,
     required bool destructive,
   }) {
-    Get.defaultDialog<void>(
+    Get.defaultDialog(
       title: titleKey.tr,
       titleStyle: const TextStyle(
         fontSize: 20,
@@ -93,7 +89,7 @@ class SettingsView extends StatelessWidget {
       barrierDismissible: true,
       cancel: OutlinedButton(
         style: OutlinedButton.styleFrom(minimumSize: const Size(112, 46)),
-        onPressed: () => Get.back<void>(),
+        onPressed: () => Get.back(),
         child: Text(
           'cancel'.tr,
           maxLines: 1,
@@ -107,7 +103,7 @@ class SettingsView extends StatelessWidget {
           foregroundColor: destructive ? Colors.white : Colors.black,
         ),
         onPressed: () {
-          Get.back<void>();
+          Get.back();
           auth.clearSessionAndGoToAuth();
         },
         child: Text(
@@ -121,7 +117,7 @@ class SettingsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final SettingsViewModel vm = Get.find<SettingsViewModel>();
+    final SettingsViewModel controller = Get.find<SettingsViewModel>();
     final AuthViewModel auth = Get.find<AuthViewModel>();
 
     return Scaffold(
@@ -135,18 +131,18 @@ class SettingsView extends StatelessWidget {
               Obx(() => _SettingsTile(
                     icon: Icons.translate_rounded,
                     title: 'language'.tr,
-                    subtitle: vm.language.nativeName,
-                    onTap: () => _pickLanguage(vm),
+                    subtitle: controller.language.nativeName,
+                    onTap: () => _pickLanguage(controller),
                   )),
               const _TileDivider(),
               Obx(() {
-                final CurrencyOption c = vm.currency;
+                final CurrencyOption c = controller.currency;
                 return _SettingsTile(
                   icon: Icons.currency_exchange_rounded,
                   title: 'currency'.tr,
                   subtitle:
                       '${c.flag}  ${c.countryName} • ${c.currencyCode} (${c.symbol})',
-                  onTap: () => _pickCurrency(vm),
+                  onTap: () => _pickCurrency(controller),
                 );
               }),
             ],
@@ -156,17 +152,20 @@ class SettingsView extends StatelessWidget {
           _SettingsCard(
             children: <Widget>[
               Obx(() {
-                final bool on = vm.lockEnabled.value;
+                final bool on = controller.lockEnabled.value;
                 return _SettingsTile(
                   icon: on ? Icons.lock_rounded : Icons.lock_open_rounded,
                   title: 'pin_lock'.tr,
                   subtitle: on ? 'pin_lock_on_sub'.tr : 'pin_lock_off_sub'.tr,
-                  trailing: Switch(value: on, onChanged: _onLockToggle),
+                  trailing: Switch(
+                    value: controller.lockEnabled.value,
+                    onChanged: _onLockToggle,
+                  ),
                   onTap: () => _onLockToggle(!on),
                 );
               }),
               Obx(() {
-                if (!vm.lockEnabled.value) {
+                if (!controller.lockEnabled.value) {
                   return const SizedBox.shrink();
                 }
                 return Column(
@@ -175,7 +174,8 @@ class SettingsView extends StatelessWidget {
                     Padding(
                       padding: const EdgeInsets.all(16),
                       child: OutlinedButton.icon(
-                        onPressed: _changePin,
+                        onPressed: () =>
+                            _openPinScreen(PinPurpose.settingsChange),
                         icon: const Icon(Icons.password_rounded),
                         label: Text(
                           'change_pin'.tr,
@@ -282,7 +282,6 @@ class _SectionLabel extends StatelessWidget {
     );
   }
 }
-
 
 class _SettingsCard extends StatelessWidget {
   const _SettingsCard({required this.children});

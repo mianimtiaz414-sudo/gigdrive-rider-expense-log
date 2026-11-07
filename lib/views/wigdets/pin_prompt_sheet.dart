@@ -12,55 +12,117 @@ class PinPromptSheet extends StatefulWidget {
 }
 
 class _PinPromptSheetState extends State<PinPromptSheet> {
-  final AuthViewModel _vm = Get.find<AuthViewModel>();
+  final AuthViewModel controller = Get.find<AuthViewModel>();
 
   @override
   void initState() {
     super.initState();
-    _vm.startPinFlow(PinPurpose.settingsDisable);
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        controller.startPinFlow(PinPurpose.settingsDisable);
+      }
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final double height = MediaQuery.of(context).size.height * 0.94;
-    return SizedBox(
-      height: height,
-      child: Column(
-        children: <Widget>[
-          const SizedBox(height: 10),
-          Container(
-            width: 44,
-            height: 4,
-            decoration: BoxDecoration(
-              color: AppColors.divider,
-              borderRadius: BorderRadius.circular(4),
+    return SafeArea(
+      top: false,
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(24, 10, 24, 20),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: <Widget>[
+            Container(
+              width: 44,
+              height: 4,
+              decoration: BoxDecoration(
+                color: AppColors.divider,
+                borderRadius: BorderRadius.circular(4),
+              ),
             ),
-          ),
-          Align(
-            alignment: AlignmentDirectional.centerEnd,
-            child: Padding(
-              padding: const EdgeInsetsDirectional.only(end: 8),
+            Align(
+              alignment: AlignmentDirectional.centerEnd,
               child: IconButton(
                 icon: const Icon(Icons.close_rounded),
-                onPressed: () => Get.back<bool>(result: false),
+                onPressed: () => Get.back(),
               ),
             ),
-          ),
-          Expanded(
-            child: Obx(
-              () => PinScreen(
-                compact: true,
-                icon: Icons.lock_open_rounded,
-                title: _vm.title,
-                subtitle: _vm.subtitle,
-                pinLength: _vm.pin.value.length,
-                errorText: _vm.errorText.value,
-                onDigit: _vm.onDigit,
-                onDelete: _vm.onDelete,
+            Container(
+              width: 64,
+              height: 64,
+              decoration: const BoxDecoration(
+                shape: BoxShape.circle,
+                color: AppColors.primarySoft,
+                boxShadow: <BoxShadow>[
+                  BoxShadow(color: AppColors.primaryGlow, blurRadius: 24),
+                ],
+              ),
+              child: const Icon(
+                Icons.lock_open_rounded,
+                color: AppColors.primary,
+                size: 30,
               ),
             ),
-          ),
-        ],
+            const SizedBox(height: 14),
+            Obx(() {
+              final String error = controller.errorText.value;
+              return Column(
+                mainAxisSize: MainAxisSize.min,
+                children: <Widget>[
+                  Text(
+                    controller.title,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.w800,
+                      color: AppColors.textPrimary,
+                    ),
+                  ),
+                  const SizedBox(height: 6),
+                  Text(
+                    controller.subtitle,
+                    textAlign: TextAlign.center,
+                    style: const TextStyle(
+                      fontSize: 14.5,
+                      color: AppColors.textSecondary,
+                    ),
+                  ),
+                  const SizedBox(height: 20),
+                  PinDots(
+                    length: controller.pin.value.length,
+                    hasError: error.isNotEmpty,
+                  ),
+                  const SizedBox(height: 12),
+                  SizedBox(
+                    height: 22,
+                    child: Text(
+                      error,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(
+                        color: AppColors.expense,
+                        fontSize: 14,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                  ),
+                ],
+              );
+            }),
+            const SizedBox(height: 10),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: PinKeypad(
+                onDigit: controller.onDigit,
+                onBackspace: controller.deleteLastDigit,
+                size: 62,
+                rowGap: 12,
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }

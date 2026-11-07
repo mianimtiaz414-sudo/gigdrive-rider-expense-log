@@ -20,6 +20,18 @@ class FirebaseAuthService {
     return _auth.authStateChanges();
   }
 
+  bool _hasProvider(String providerId) {
+    final User? user = currentUser;
+    if (user == null) {
+      return false;
+    }
+    return user.providerData.any((UserInfo i) => i.providerId == providerId);
+  }
+
+  bool get usesPasswordProvider => _hasProvider('password');
+
+  bool get usesGoogleProvider => _hasProvider('google.com');
+
   void _ensureAvailable() {
     if (!isAvailable) {
       throw StateError(
@@ -57,6 +69,45 @@ class FirebaseAuthService {
       idToken: googleAuth.idToken,
     );
     return _auth.signInWithCredential(credential);
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    _ensureAvailable();
+    await _auth.sendPasswordResetEmail(email: email);
+  }
+
+  Future<void> reauthWithPassword(String password) async {
+    _ensureAvailable();
+    final User? user = currentUser;
+    final String? email = user?.email;
+    if (user == null || email == null) {
+      throw StateError('No signed-in account to verify.');
+    }
+    final AuthCredential credential = EmailAuthProvider.credential(
+      email: email,
+      password: password,
+    );
+    await user.reauthenticateWithCredential(credential);
+  }
+
+  Future<bool> reauthWithGoogle() async {
+    _ensureAvailable();
+    final User? user = currentUser;
+    if (user == null) {
+      throw StateError('No signed-in account to verify.');
+    }
+    final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+    if (googleUser == null) {
+      return false;
+    }
+    final GoogleSignInAuthentication googleAuth =
+        await googleUser.authentication;
+    final OAuthCredential credential = GoogleAuthProvider.credential(
+      accessToken: googleAuth.accessToken,
+      idToken: googleAuth.idToken,
+    );
+    await user.reauthenticateWithCredential(credential);
+    return true;
   }
 
   Future<void> signOut() async {

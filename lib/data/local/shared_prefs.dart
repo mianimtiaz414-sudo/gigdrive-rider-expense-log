@@ -11,7 +11,9 @@ class SharedPrefs {
   static const String _kPinHash = 'pin_hash';
   static const String _kOnboardingDone = 'onboarding_done';
   static const String _kSetupDone = 'setup_done';
+  static const String _kSetupStep = 'setup_step';
   static const String _kSessionActive = 'session_active';
+  static const String _kLegacyMigrated = 'legacy_migrated';
   static const String _kDarkTheme = 'is_dark_theme';
   static const String _kLanguage = 'language_code';
   static const String _kCurrencyCode = 'currency_code';
@@ -29,9 +31,10 @@ class SharedPrefs {
     await _migrateLegacy();
   }
 
-  
-  
   static Future<void> _migrateLegacy() async {
+    if (_prefs.getBool(_kLegacyMigrated) ?? false) {
+      return;
+    }
     if (!_prefs.containsKey(_kLockEnabled) && hasPin) {
       await _prefs.setBool(_kLockEnabled, true);
     }
@@ -41,9 +44,9 @@ class SharedPrefs {
     if (!_prefs.containsKey(_kSessionActive) && isSetupDone) {
       await _prefs.setBool(_kSessionActive, true);
     }
+    await _prefs.setBool(_kLegacyMigrated, true);
   }
 
-  
   static bool get isOnboardingDone => _prefs.getBool(_kOnboardingDone) ?? false;
 
   static Future<void> setOnboardingDone(bool value) async {
@@ -56,9 +59,12 @@ class SharedPrefs {
     await _prefs.setBool(_kSetupDone, value);
   }
 
-  
-  
-  
+  static int get setupStep => _prefs.getInt(_kSetupStep) ?? 0;
+
+  static Future<void> setSetupStep(int value) async {
+    await _prefs.setInt(_kSetupStep, value);
+  }
+
   static bool get isSessionActive => _prefs.getBool(_kSessionActive) ?? false;
 
   static Future<void> setSessionActive(bool value) async {
@@ -69,14 +75,12 @@ class SharedPrefs {
     await _prefs.setBool(_kSessionActive, false);
   }
 
-  
   static bool get isDarkTheme => _prefs.getBool(_kDarkTheme) ?? true;
 
   static Future<void> setDarkTheme(bool value) async {
     await _prefs.setBool(_kDarkTheme, value);
   }
 
-  
   static String get languageCode =>
       _prefs.getString(_kLanguage) ?? defaultLanguage;
 
@@ -88,12 +92,10 @@ class SharedPrefs {
 
   static bool get isLockEnabled => _prefs.getBool(_kLockEnabled) ?? false;
 
-  
   static bool get isLockActive => isLockEnabled && hasPin;
 
   static int get settingsUpdatedAt => _prefs.getInt(_kUpdatedAt) ?? 0;
 
-  
   static bool get settingsDirty => _prefs.getBool(_kDirty) ?? false;
 
   static Future<void> setSettingsDirty(bool value) async {
@@ -124,8 +126,6 @@ class SharedPrefs {
     await _touch();
   }
 
-  
-  
   static Map<String, dynamic> settingsToMap() {
     return <String, dynamic>{
       'languageCode': languageCode,
@@ -136,8 +136,6 @@ class SharedPrefs {
     };
   }
 
-  
-  
   static Future<void> applyRemoteSettings({
     required String languageCode,
     required String currencyCountry,
@@ -160,7 +158,6 @@ class SharedPrefs {
     await _prefs.setBool(_kDirty, diverged);
   }
 
-  
   static bool get hasPin => (_prefs.getString(_kPinHash) ?? '').isNotEmpty;
 
   static Future<void> savePin(String pin) async {

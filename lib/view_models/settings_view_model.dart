@@ -20,10 +20,14 @@ class SettingsViewModel extends GetxController {
   CurrencyOption get currency =>
       CurrencyCatalog.byCountry(currencyCountry.value);
 
-  
   String get currencySymbol => currency.displaySymbol;
 
-  
+  int get setupStep => SharedPrefs.setupStep;
+
+  Future<void> saveSetupStep(int step) async {
+    await SharedPrefs.setSetupStep(step);
+  }
+
   Future<void> setLanguage(AppLanguage lang) async {
     languageCode.value = lang.code;
     await SharedPrefs.setLanguageCode(lang.code);
@@ -31,7 +35,6 @@ class SettingsViewModel extends GetxController {
     _repository.pushInBackground();
   }
 
-  
   Future<void> setCurrency(CurrencyOption option) async {
     currencyCountry.value = option.countryCode;
     await SharedPrefs.setCurrency(
@@ -41,30 +44,25 @@ class SettingsViewModel extends GetxController {
     _repository.pushInBackground();
   }
 
-  
   Future<void> applyLockState(bool enabled) async {
     lockEnabled.value = enabled;
     await SharedPrefs.setLockEnabled(enabled);
+    update();
     _repository.pushInBackground();
   }
 
-  
-  
   Future<void> markSetupDone() async {
     await SharedPrefs.setSetupDone(true);
     await SharedPrefs.setSessionActive(true);
   }
 
-  
   Future<void> skipSecurityAndFinish() async {
     await SharedPrefs.clearPin();
     await applyLockState(false);
     await markSetupDone();
-    Get.offAllNamed<void>(AppRoutes.dashboard);
+    Get.offAllNamed(AppRoutes.dashboard);
   }
 
-  
-  
   Future<void> syncFromCloud() async {
     final bool changed = await _repository.reconcile();
     if (!changed) {
@@ -73,6 +71,7 @@ class SettingsViewModel extends GetxController {
     languageCode.value = SharedPrefs.languageCode;
     currencyCountry.value = SharedPrefs.currencyCountry;
     lockEnabled.value = SharedPrefs.isLockActive;
+    update();
     Get.updateLocale(TranslationService.localeFor(languageCode.value));
   }
 }

@@ -1,8 +1,10 @@
 import 'dart:async';
+
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/services.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
+import 'package:rider_expense_tracker/data/local/hive_storage_service.dart';
 import 'package:rider_expense_tracker/data/local/shared_prefs.dart';
 import 'package:rider_expense_tracker/data/remote/firebase_auth_service.dart';
 import 'package:rider_expense_tracker/routes/app_routes.dart';
@@ -15,9 +17,12 @@ enum PinPurpose {
   settingsEnable,
   settingsChange,
   settingsDisable,
+  resetCreate,
 }
 
 enum PinStage { verifyCurrent, enterNew, confirmNew }
+
+enum ForgotPinRoute { password, google, signedOut }
 
 class AuthViewModel extends GetxController {
   AuthViewModel(this._auth, this._settings);
@@ -37,12 +42,20 @@ class AuthViewModel extends GetxController {
 
   String _firstPin = '';
   bool _busy = false;
-  bool _loggingOut = false;
-  Worker? _pinWorker;
 
   bool get isSignedIn => firebaseUser.value != null;
   bool get isCloudAvailable => _auth.isAvailable;
   String get userEmail => firebaseUser.value?.email ?? '';
+
+  ForgotPinRoute get forgotPinRoute {
+    if (!isSignedIn) {
+      return ForgotPinRoute.signedOut;
+    }
+    if (_auth.usesPasswordProvider) {
+      return ForgotPinRoute.password;
+    }
+    return ForgotPinRoute.google;
+  }
 
   String get title {
     switch (stage.value) {
@@ -51,9 +64,12 @@ class AuthViewModel extends GetxController {
             ? 'welcome_back'.tr
             : 'enter_current_pin'.tr;
       case PinStage.enterNew:
-        return purpose.value == PinPurpose.settingsChange
-            ? 'new_pin'.tr
-            : 'create_pin'.tr;
+        {
+          final PinPurpose p = purpose.value;
+          return (p == PinPurpose.settingsChange || p == PinPurpose.resetCreate)
+              ? 'new_pin'.tr
+              : 'create_pin'.tr;
+        }
       case PinStage.confirmNew:
         return 'confirm_pin'.tr;
     }
@@ -66,9 +82,15 @@ class AuthViewModel extends GetxController {
             ? 'enter_pin_unlock'.tr
             : 'enter_current_pin_sub'.tr;
       case PinStage.enterNew:
-        return purpose.value == PinPurpose.settingsChange
-            ? 'new_pin_sub'.tr
-            : 'create_pin_sub'.tr;
+        {
+          final PinPurpose p = purpose.value;
+          if (p == PinPurpose.resetCreate) {
+            return 'forgot_pin_ready_msg'.tr;
+          }
+          return p == PinPurpose.settingsChange
+              ? 'new_pin_sub'.tr
+              : 'create_pin_sub'.tr;
+        }
       case PinStage.confirmNew:
         return 'confirm_pin_sub'.tr;
     }
@@ -79,15 +101,6 @@ class AuthViewModel extends GetxController {
     super.onInit();
     firebaseUser.value = _auth.currentUser;
     firebaseUser.bindStream(_auth.authStateChanges);
-    _pinWorker = ever<String>(pin, (String value) {
-      _processPin(value);
-    });
-  }
-
-  @override
-  void onClose() {
-    _pinWorker?.dispose();
-    super.onClose();
   }
 
   String resolveStartRoute() {
@@ -118,11 +131,11 @@ class AuthViewModel extends GetxController {
   }
 
   void startPinFlow(PinPurpose p) {
-    purpose.value = p;
     _firstPin = '';
     _busy = false;
     errorText.value = '';
     pin.value = '';
+    purpose.value = p;
     stage.value =
         _needsVerification(p) ? PinStage.verifyCurrent : PinStage.enterNew;
   }
@@ -133,6 +146,9 @@ class AuthViewModel extends GetxController {
     }
     errorText.value = '';
     pin.value = pin.value + digit;
+    if (pin.value.length == pinLength) {
+      unawaited(_submit());
+    }
   }
 
   void deleteLastDigit() {
@@ -142,13 +158,14 @@ class AuthViewModel extends GetxController {
     pin.value = pin.value.substring(0, pin.value.length - 1);
   }
 
-  Future<void> _processPin(String value) async {
-    if (value.length != pinLength || _busy) {
+  Future<void> _submit() async {
+    if (_busy) {
       return;
     }
     _busy = true;
-    await Future<void>.delayed(const Duration(milliseconds: 180));
+    final String value = pin.value;
     try {
+      await Future<void>.delayed(const Duration(milliseconds: 150));
       switch (stage.value) {
         case PinStage.verifyCurrent:
           await _handleVerify(value);
@@ -163,6 +180,9 @@ class AuthViewModel extends GetxController {
           await _handleConfirm(value);
           break;
       }
+    } catch (e) {
+      pin.value = '';
+      AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
     } finally {
       _busy = false;
     }
@@ -178,6 +198,7 @@ class AuthViewModel extends GetxController {
 
     switch (purpose.value) {
       case PinPurpose.login:
+        pin.value = '';
         Get.offAllNamed(
           SharedPrefs.isSessionActive ? AppRoutes.dashboard : AppRoutes.login,
         );
@@ -185,7 +206,8 @@ class AuthViewModel extends GetxController {
       case PinPurpose.settingsDisable:
         await SharedPrefs.clearPin();
         await _settings.applyLockState(false);
-        Get.back(result: true);
+        pin.value = '';
+        Get.back();
         AppFeedback.show('security_pin'.tr, 'pin_lock_off_done'.tr);
         break;
       case PinPurpose.settingsChange:
@@ -195,6 +217,8 @@ class AuthViewModel extends GetxController {
         break;
       case PinPurpose.setupCreate:
       case PinPurpose.settingsEnable:
+      case PinPurpose.resetCreate:
+        pin.value = '';
         break;
     }
   }
@@ -210,27 +234,124 @@ class AuthViewModel extends GetxController {
     }
 
     await SharedPrefs.savePin(value);
-    if (purpose.value != PinPurpose.settingsChange) {
-      await _settings.applyLockState(true);
-    }
+    _firstPin = '';
+    pin.value = '';
 
     switch (purpose.value) {
       case PinPurpose.setupCreate:
+        await _settings.applyLockState(true);
         await _settings.markSetupDone();
         Get.offAllNamed(AppRoutes.dashboard);
         AppFeedback.show('pin_created'.tr, 'pin_created_msg'.tr);
         break;
       case PinPurpose.settingsEnable:
-        Get.back(result: true);
+        await _settings.applyLockState(true);
+        Get.back();
         AppFeedback.show('pin_created'.tr, 'pin_created_msg'.tr);
         break;
       case PinPurpose.settingsChange:
-        Get.back(result: true);
+        Get.back();
         AppFeedback.show('pin_changed'.tr, 'pin_changed_msg'.tr);
+        break;
+      case PinPurpose.resetCreate:
+        await _settings.applyLockState(true);
+        Get.offAllNamed(
+          SharedPrefs.isSessionActive ? AppRoutes.dashboard : AppRoutes.login,
+        );
+        AppFeedback.show('pin_created'.tr, 'pin_created_msg'.tr);
         break;
       case PinPurpose.login:
       case PinPurpose.settingsDisable:
         break;
+    }
+  }
+
+  Future<void> _beginPinRecreation() async {
+    await SharedPrefs.clearPin();
+    await _settings.applyLockState(false);
+    startPinFlow(PinPurpose.resetCreate);
+  }
+
+  Future<void> _runVerification(Future<bool> Function() action) async {
+    if (isLoading.value) {
+      return;
+    }
+    isLoading.value = true;
+    try {
+      final bool verified = await action();
+      if (!verified) {
+        return;
+      }
+      await _beginPinRecreation();
+      AppFeedback.show('forgot_pin_ready_title'.tr, 'forgot_pin_ready_msg'.tr);
+    } on FirebaseAuthException catch (e) {
+      final bool badCredential = e.code == 'wrong-password' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'invalid-login-credentials';
+      AppFeedback.show(
+        'auth_failed'.tr,
+        badCredential ? 'forgot_pin_verify_failed'.tr : (e.message ?? e.code),
+        isError: true,
+      );
+    } catch (e) {
+      AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
+    } finally {
+      isLoading.value = false;
+    }
+  }
+
+  Future<void> resetPinWithPassword(String password) {
+    return _runVerification(() async {
+      await _auth.reauthWithPassword(password);
+      return true;
+    });
+  }
+
+  Future<void> resetPinWithGoogle() {
+    return _runVerification(() => _auth.reauthWithGoogle());
+  }
+
+  Future<void> eraseDataAndResetPin() {
+    return _runVerification(() async {
+      await Get.find<HiveStorageService>().clearAll();
+      Get.find<ExpenseViewModel>().loadLogs();
+      return true;
+    });
+  }
+
+  Future<void> sendPasswordReset(String email) async {
+    if (isLoading.value) {
+      return;
+    }
+    final String clean = email.trim();
+    if (!GetUtils.isEmail(clean)) {
+      AppFeedback.show(
+        'forgot_password_need_title'.tr,
+        'forgot_password_need_msg'.tr,
+        isError: true,
+      );
+      return;
+    }
+    isLoading.value = true;
+    try {
+      await _auth.sendPasswordReset(clean);
+      AppFeedback.show(
+        'forgot_password_sent_title'.tr,
+        'forgot_password_sent_msg'.trParams(<String, String>{'email': clean}),
+      );
+    } on FirebaseAuthException catch (e) {
+      if (e.code == 'user-not-found') {
+        AppFeedback.show(
+          'forgot_password_sent_title'.tr,
+          'forgot_password_sent_msg'.trParams(<String, String>{'email': clean}),
+        );
+      } else {
+        AppFeedback.show('auth_failed'.tr, e.message ?? e.code, isError: true);
+      }
+    } catch (e) {
+      AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
+    } finally {
+      isLoading.value = false;
     }
   }
 
@@ -246,6 +367,48 @@ class AuthViewModel extends GetxController {
     return _runAuth(() => _auth.signInWithGoogle());
   }
 
+  Future<void> submitEmail({
+    required String email,
+    required String password,
+    required bool register,
+  }) async {
+    if (isLoading.value) {
+      return;
+    }
+    final String cleanEmail = email.trim();
+    if (!GetUtils.isEmail(cleanEmail) || password.length < 6) {
+      AppFeedback.show(
+        'check_details'.tr,
+        'check_details_msg'.tr,
+        isError: true,
+      );
+      return;
+    }
+    final bool ok = register
+        ? await registerWithEmail(cleanEmail, password)
+        : await signInWithEmail(cleanEmail, password);
+    if (ok) {
+      await finishLogin();
+    }
+  }
+
+  Future<void> submitGoogle() async {
+    if (isLoading.value) {
+      return;
+    }
+    final bool ok = await signInWithGoogle();
+    if (ok) {
+      await finishLogin();
+    }
+  }
+
+  Future<void> continueOffline() async {
+    if (isLoading.value) {
+      return;
+    }
+    await finishLogin();
+  }
+
   Future<void> finishLogin() async {
     await SharedPrefs.setSessionActive(true);
     Get.offAllNamed(AppRoutes.dashboard);
@@ -255,41 +418,43 @@ class AuthViewModel extends GetxController {
   }
 
   Future<void> clearSessionAndGoToAuth() async {
-    if (_loggingOut) return;
-
-    final expenseVM = Get.find<ExpenseViewModel>();
-
-    expenseVM.showInterstitialAd(onAdDismissed: () async {
-      _loggingOut = true;
-      isLoading.value = true;
-      try {
-        if (isSignedIn) {
-          final bool safe = await expenseVM.backupAndClearLocalData();
-          if (!safe) {
-            AppFeedback.show('backup_failed_title'.tr, 'backup_failed_msg'.tr,
-                isError: true);
-            return;
-          }
+    if (isLoading.value) {
+      return;
+    }
+    isLoading.value = true;
+    try {
+      if (isSignedIn) {
+        final bool safe =
+            await Get.find<ExpenseViewModel>().backupAndClearLocalData();
+        if (!safe) {
+          AppFeedback.show(
+            'backup_failed_title'.tr,
+            'backup_failed_msg'.tr,
+            isError: true,
+          );
+          return;
         }
-
-        await _auth.signOut();
-        firebaseUser.value = null;
-        await SharedPrefs.clearSession();
-
-        Get.offAllNamed(AppRoutes.login);
-        AppFeedback.show('signed_out'.tr, 'signed_out_msg'.tr);
-      } catch (e) {
-        AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
-      } finally {
-        isLoading.value = false;
-        _loggingOut = false;
       }
-    });
+
+      await _auth.signOut();
+      firebaseUser.value = null;
+      await SharedPrefs.clearSession();
+
+      Get.offAllNamed(AppRoutes.login);
+      AppFeedback.show('signed_out'.tr, 'signed_out_msg'.tr);
+    } catch (e) {
+      AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
+    } finally {
+      isLoading.value = false;
+    }
   }
 
   Future<void> signOut() => clearSessionAndGoToAuth();
 
   Future<bool> _runAuth(Future<UserCredential?> Function() action) async {
+    if (isLoading.value) {
+      return false;
+    }
     isLoading.value = true;
     try {
       final UserCredential? credential = await action();
@@ -302,7 +467,12 @@ class AuthViewModel extends GetxController {
       AppFeedback.show('auth_failed'.tr, e.message ?? e.code, isError: true);
       return false;
     } catch (e) {
-      AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
+      final String message = e.toString();
+      if (message.contains('ApiException: 10')) {
+        AppFeedback.show('auth_failed'.tr, 'google_error_10'.tr, isError: true);
+      } else {
+        AppFeedback.show('something_wrong'.tr, message, isError: true);
+      }
       return false;
     } finally {
       isLoading.value = false;

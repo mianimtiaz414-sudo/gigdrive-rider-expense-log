@@ -12,11 +12,11 @@ class PinDots extends StatelessWidget {
   Widget build(BuildContext context) {
     final Color active = hasError ? AppColors.expense : AppColors.primary;
     return Row(
-      mainAxisAlignment: MainAxisAlignment.center,
+      mainAxisSize: MainAxisSize.min,
       children: List<Widget>.generate(4, (int i) {
         final bool filled = i < length;
         return AnimatedContainer(
-          duration: const Duration(milliseconds: 180),
+          duration: const Duration(milliseconds: 160),
           margin: const EdgeInsets.symmetric(horizontal: 12),
           width: 18,
           height: 18,
@@ -39,74 +39,58 @@ class PinDots extends StatelessWidget {
   }
 }
 
-
-
 class PinKeypad extends StatelessWidget {
   const PinKeypad({
     super.key,
     required this.onDigit,
-    required this.onDelete,
-    this.size = 76,
-    this.rowGap = 18,
+    required this.onBackspace,
+    this.size = 72,
+    this.rowGap = 14,
   });
 
   final void Function(String digit) onDigit;
-  final VoidCallback onDelete;
+  final VoidCallback onBackspace;
   final double size;
   final double rowGap;
 
-  Widget _row(List<String> keys) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-      children: keys
-          .map((String k) => _KeyShell(
-                size: size,
-                onTap: () => onDigit(k),
-                child: Text(
-                  k,
-                  style: const TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
-              ))
-          .toList(),
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
+    final List<List<String>> rows = <List<String>>[
+      <String>['1', '2', '3'],
+      <String>['4', '5', '6'],
+      <String>['7', '8', '9'],
+    ];
     return Directionality(
       textDirection: TextDirection.ltr,
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: <Widget>[
-          _row(<String>['1', '2', '3']),
-          SizedBox(height: rowGap),
-          _row(<String>['4', '5', '6']),
-          SizedBox(height: rowGap),
-          _row(<String>['7', '8', '9']),
-          SizedBox(height: rowGap),
+          for (final List<String> row in rows) ...<Widget>[
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+              children: <Widget>[
+                for (final String digit in row)
+                  _PadKey(
+                    size: size,
+                    onTap: () => onDigit(digit),
+                    child: _DigitLabel(digit),
+                  ),
+              ],
+            ),
+            SizedBox(height: rowGap),
+          ],
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceEvenly,
             children: <Widget>[
               SizedBox(width: size, height: size),
-              _KeyShell(
+              _PadKey(
                 size: size,
                 onTap: () => onDigit('0'),
-                child: const Text(
-                  '0',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.w600,
-                    color: AppColors.textPrimary,
-                  ),
-                ),
+                child: const _DigitLabel('0'),
               ),
-              _KeyShell(
+              _PadKey(
                 size: size,
-                onTap: onDelete,
+                onTap: onBackspace,
                 child: const Icon(
                   Icons.backspace_outlined,
                   color: AppColors.textSecondary,
@@ -121,16 +105,34 @@ class PinKeypad extends StatelessWidget {
   }
 }
 
-class _KeyShell extends StatelessWidget {
-  const _KeyShell({
-    required this.child,
-    required this.onTap,
+class _DigitLabel extends StatelessWidget {
+  const _DigitLabel(this.digit);
+
+  final String digit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      digit,
+      style: const TextStyle(
+        fontSize: 28,
+        fontWeight: FontWeight.w600,
+        color: AppColors.textPrimary,
+      ),
+    );
+  }
+}
+
+class _PadKey extends StatelessWidget {
+  const _PadKey({
     required this.size,
+    required this.onTap,
+    required this.child,
   });
 
-  final Widget child;
-  final VoidCallback onTap;
   final double size;
+  final VoidCallback onTap;
+  final Widget child;
 
   @override
   Widget build(BuildContext context) {
@@ -148,130 +150,6 @@ class _KeyShell extends StatelessWidget {
           },
           child: Center(child: child),
         ),
-      ),
-    );
-  }
-}
-
-
-class PinScreen extends StatelessWidget {
-  const PinScreen({
-    super.key,
-    required this.icon,
-    required this.title,
-    required this.subtitle,
-    required this.pinLength,
-    required this.errorText,
-    required this.onDigit,
-    required this.onDelete,
-    this.compact = false,
-  });
-
-  final IconData icon;
-  final String title;
-  final String subtitle;
-  final int pinLength;
-  final String errorText;
-  final void Function(String digit) onDigit;
-  final VoidCallback onDelete;
-
-  
-  final bool compact;
-
-  @override
-  Widget build(BuildContext context) {
-    final double topGap = compact ? 4 : 40;
-    final double iconBox = compact ? 64 : 84;
-    final double iconSize = compact ? 30 : 40;
-    final double afterIcon = compact ? 14 : 24;
-    final double afterSubtitle = compact ? 22 : 36;
-    final double keypadSize = compact ? 66 : 76;
-    final double rowGap = compact ? 12 : 18;
-    final double bottomGap = compact ? 16 : 32;
-
-    return SafeArea(
-      child: LayoutBuilder(
-        builder: (BuildContext context, BoxConstraints constraints) {
-          return SingleChildScrollView(
-            child: ConstrainedBox(
-              constraints: BoxConstraints(minHeight: constraints.maxHeight),
-              child: IntrinsicHeight(
-                child: Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 24),
-                  child: Column(
-                    children: <Widget>[
-                      SizedBox(height: topGap),
-                      Container(
-                        width: iconBox,
-                        height: iconBox,
-                        decoration: const BoxDecoration(
-                          shape: BoxShape.circle,
-                          color: AppColors.primarySoft,
-                          boxShadow: <BoxShadow>[
-                            BoxShadow(
-                              color: AppColors.primaryGlow,
-                              blurRadius: 30,
-                            ),
-                          ],
-                        ),
-                        child: Icon(
-                          icon,
-                          color: AppColors.primary,
-                          size: iconSize,
-                        ),
-                      ),
-                      SizedBox(height: afterIcon),
-                      Text(
-                        title,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 26,
-                          fontWeight: FontWeight.w800,
-                          color: AppColors.textPrimary,
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text(
-                        subtitle,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          color: AppColors.textSecondary,
-                        ),
-                      ),
-                      SizedBox(height: afterSubtitle),
-                      PinDots(
-                        length: pinLength,
-                        hasError: errorText.isNotEmpty,
-                      ),
-                      const SizedBox(height: 16),
-                      SizedBox(
-                        height: 22,
-                        child: Text(
-                          errorText,
-                          textAlign: TextAlign.center,
-                          style: const TextStyle(
-                            color: AppColors.expense,
-                            fontSize: 14,
-                            fontWeight: FontWeight.w500,
-                          ),
-                        ),
-                      ),
-                      const Spacer(),
-                      PinKeypad(
-                        onDigit: onDigit,
-                        onDelete: onDelete,
-                        size: keypadSize,
-                        rowGap: rowGap,
-                      ),
-                      SizedBox(height: bottomGap),
-                    ],
-                  ),
-                ),
-              ),
-            ),
-          );
-        },
       ),
     );
   }
