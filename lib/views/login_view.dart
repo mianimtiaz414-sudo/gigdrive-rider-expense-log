@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
+import 'package:rider_expense_tracker/views/widgets/google_auth_card.dart';
+import 'package:rider_expense_tracker/views/widgets/loading_barrier.dart';
 
 class LoginView extends StatefulWidget {
   const LoginView({super.key});
@@ -122,7 +124,10 @@ class _LoginViewState extends State<LoginView> {
                         const SizedBox(height: 18),
                         _buildDivider(),
                         const SizedBox(height: 18),
-                        _buildGoogleCard(),
+                        GoogleAuthCard(
+                          busy: controller.isLoading,
+                          onPressed: _submitGoogle,
+                        ),
                         const SizedBox(height: 18),
                         _buildOfflineLink(),
                       ] else ...<Widget>[
@@ -136,24 +141,7 @@ class _LoginViewState extends State<LoginView> {
               ),
             ),
           ),
-          Positioned.fill(
-            child: Obx(() {
-              if (!controller.isLoading.value) {
-                return const SizedBox.shrink();
-              }
-              return const Stack(
-                children: <Widget>[
-                  ModalBarrier(dismissible: false, color: Colors.black54),
-                  Center(
-                    child: CircularProgressIndicator(
-                      strokeWidth: 3,
-                      color: AppColors.primary,
-                    ),
-                  ),
-                ],
-              );
-            }),
-          ),
+          LoadingBarrier(visible: controller.isLoading),
         ],
       ),
     );
@@ -271,14 +259,21 @@ class _LoginViewState extends State<LoginView> {
             )),
         Align(
           alignment: AlignmentDirectional.centerEnd,
-          child: Obx(() => TextButton(
-                onPressed: controller.isLoading.value ? null : _forgotPassword,
-                child: Text(
-                  'forgot_password'.tr,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                ),
-              )),
+          child: Obx(() {
+            final int wait = controller.resetCooldown.value;
+            final bool blocked = controller.isLoading.value || wait > 0;
+            final String label = wait > 0
+                ? '${'forgot_password'.tr} (${wait}s)'
+                : 'forgot_password'.tr;
+            return TextButton(
+              onPressed: blocked ? null : _forgotPassword,
+              child: Text(
+                label,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            );
+          }),
         ),
         const SizedBox(height: 4),
         Obx(() => SizedBox(
@@ -361,7 +356,7 @@ class _LoginViewState extends State<LoginView> {
 
   Widget _buildDivider() {
     return Row(
-      children: <Widget>[
+      children: [
         const Expanded(child: Divider(color: AppColors.divider, height: 1)),
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 14),
@@ -372,29 +367,6 @@ class _LoginViewState extends State<LoginView> {
         ),
         const Expanded(child: Divider(color: AppColors.divider, height: 1)),
       ],
-    );
-  }
-
-  Widget _buildGoogleCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: AppColors.surface,
-        borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: AppColors.divider),
-      ),
-      child: Obx(() => SizedBox(
-            height: 56,
-            child: OutlinedButton.icon(
-              onPressed: controller.isLoading.value ? null : _submitGoogle,
-              icon: const Icon(Icons.account_circle_outlined),
-              label: Text(
-                'continue_google'.tr,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-              ),
-            ),
-          )),
     );
   }
 
@@ -436,7 +408,7 @@ class _LoginViewState extends State<LoginView> {
       ),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.start,
-        children: <Widget>[
+        children: [
           const Icon(Icons.cloud_off_rounded, color: AppColors.textSecondary),
           const SizedBox(width: 12),
           Expanded(
@@ -464,14 +436,12 @@ class _ModeSwitch extends StatelessWidget {
     required this.onLeft,
     required this.onRight,
   });
-
   final String leftLabel;
   final String rightLabel;
   final bool rightSelected;
   final bool enabled;
   final VoidCallback onLeft;
   final VoidCallback onRight;
-
   @override
   Widget build(BuildContext context) {
     return Container(
@@ -482,7 +452,7 @@ class _ModeSwitch extends StatelessWidget {
         border: Border.all(color: AppColors.divider),
       ),
       child: Row(
-        children: <Widget>[
+        children: [
           Expanded(
             child: _ModeSegment(
               label: leftLabel,
@@ -510,11 +480,9 @@ class _ModeSegment extends StatelessWidget {
     required this.selected,
     required this.onTap,
   });
-
   final String label;
   final bool selected;
   final VoidCallback? onTap;
-
   @override
   Widget build(BuildContext context) {
     return Material(

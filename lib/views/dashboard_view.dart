@@ -8,7 +8,7 @@ import 'package:rider_expense_tracker/routes/app_routes.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/expense_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
-import 'package:rider_expense_tracker/views/wigdets/cloud_sheet.dart';
+import 'package:rider_expense_tracker/views/widgets/cloud_sheet.dart';
 
 class DashboardView extends StatelessWidget {
   const DashboardView({super.key});
@@ -603,3 +603,4 @@ class _LogTile extends StatelessWidget {
     );
   }
 }
+

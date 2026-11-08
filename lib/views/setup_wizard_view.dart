@@ -7,8 +7,8 @@ import 'package:rider_expense_tracker/data/models/app_language.dart';
 import 'package:rider_expense_tracker/data/models/country_currency.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
-import 'package:rider_expense_tracker/views/wigdets/pin_widgets.dart';
-import 'package:rider_expense_tracker/views/wigdets/searchable_picker.dart';
+import 'package:rider_expense_tracker/views/widgets/pin_widgets.dart';
+import 'package:rider_expense_tracker/views/widgets/searchable_picker.dart';
 
 class SetupWizardView extends StatefulWidget {
   const SetupWizardView({super.key});
@@ -460,3 +460,4 @@ class _StepHeader extends StatelessWidget {
     );
   }
 }
+

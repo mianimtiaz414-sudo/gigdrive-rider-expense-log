@@ -31,6 +31,7 @@ class AuthViewModel extends GetxController {
   final SettingsViewModel _settings;
 
   static const int pinLength = 4;
+  static const int resetCooldownSeconds = 60;
 
   final RxString pin = ''.obs;
   final RxString errorText = ''.obs;
@@ -38,10 +39,13 @@ class AuthViewModel extends GetxController {
   final Rx<PinPurpose> purpose = PinPurpose.login.obs;
 
   final RxBool isLoading = false.obs;
+  final RxInt resetCooldown = 0.obs;
   final Rxn<User> firebaseUser = Rxn<User>();
 
   String _firstPin = '';
   bool _busy = false;
+  Timer? _cooldownTimer;
+  StreamSubscription<User?>? _authSubscription;
 
   bool get isSignedIn => firebaseUser.value != null;
   bool get isCloudAvailable => _auth.isAvailable;
@@ -55,6 +59,11 @@ class AuthViewModel extends GetxController {
       return ForgotPinRoute.password;
     }
     return ForgotPinRoute.google;
+  }
+
+  String _text(String key, String fallback) {
+    final String value = key.tr;
+    return value == key ? fallback : value;
   }
 
   String get title {
@@ -100,7 +109,21 @@ class AuthViewModel extends GetxController {
   void onInit() {
     super.onInit();
     firebaseUser.value = _auth.currentUser;
-    firebaseUser.bindStream(_auth.authStateChanges);
+    final dynamic streamData = _auth.authStateChanges;
+    if (streamData is Stream<User?>) {
+      _authSubscription = streamData.listen((User? user) {
+        if (Get.currentRoute != AppRoutes.login) {
+          firebaseUser.value = user;
+        }
+      });
+    }
+  }
+
+  @override
+  void onClose() {
+    _cooldownTimer?.cancel();
+    _authSubscription?.cancel();
+    super.onClose();
   }
 
   String resolveStartRoute() {
@@ -290,7 +313,7 @@ class AuthViewModel extends GetxController {
           e.code == 'invalid-login-credentials';
       AppFeedback.show(
         'auth_failed'.tr,
-        badCredential ? 'forgot_pin_verify_failed'.tr : (e.message ?? e.code),
+        badCredential ? 'forgot_pin_verify_failed'.tr : _friendlyAuthError(e),
         isError: true,
       );
     } catch (e) {
@@ -302,13 +325,13 @@ class AuthViewModel extends GetxController {
 
   Future<void> resetPinWithPassword(String password) {
     return _runVerification(() async {
-      await _auth.reauthWithPassword(password);
+      await _auth.verifyCurrentPassword(password);
       return true;
     });
   }
 
   Future<void> resetPinWithGoogle() {
-    return _runVerification(() => _auth.reauthWithGoogle());
+    return _runVerification(() => _auth.reauthenticateGoogle());
   }
 
   Future<void> eraseDataAndResetPin() {
@@ -319,8 +342,65 @@ class AuthViewModel extends GetxController {
     });
   }
 
-  Future<void> sendPasswordReset(String email) async {
-    if (isLoading.value) {
+  String _friendlyAuthError(FirebaseAuthException e) {
+    switch (e.code) {
+      case 'invalid-email':
+        return _text('err_invalid_email', 'That email address is not valid.');
+      case 'user-disabled':
+        return _text('err_user_disabled', 'This account has been disabled.');
+      case 'user-not-found':
+      case 'wrong-password':
+      case 'invalid-credential':
+      case 'invalid-login-credentials':
+        return _text(
+          'err_bad_credentials',
+          'Incorrect email or password. Please try again.',
+        );
+      case 'email-already-in-use':
+        return _text(
+          'err_email_in_use',
+          'An account already exists for this email. Try signing in.',
+        );
+      case 'weak-password':
+        return _text(
+          'err_weak_password',
+          'Choose a stronger password with at least 6 characters.',
+        );
+      case 'too-many-requests':
+        return _text(
+          'err_too_many',
+          'Too many attempts. Please wait a moment and try again.',
+        );
+      case 'network-request-failed':
+        return _text(
+          'err_network',
+          'No internet connection. Check your network and try again.',
+        );
+      case 'operation-not-allowed':
+        return _text(
+          'err_not_allowed',
+          'This sign-in method is not enabled for the app.',
+        );
+      default:
+        return e.message ?? e.code;
+    }
+  }
+
+  void _startResetCooldown() {
+    _cooldownTimer?.cancel();
+    resetCooldown.value = resetCooldownSeconds;
+    _cooldownTimer = Timer.periodic(const Duration(seconds: 1), (Timer t) {
+      if (resetCooldown.value <= 1) {
+        resetCooldown.value = 0;
+        t.cancel();
+      } else {
+        resetCooldown.value = resetCooldown.value - 1;
+      }
+    });
+  }
+
+  Future sendPasswordReset(String email) async {
+    if (isLoading.value || resetCooldown.value > 0) {
       return;
     }
     final String clean = email.trim();
@@ -334,19 +414,22 @@ class AuthViewModel extends GetxController {
     }
     isLoading.value = true;
     try {
-      await _auth.sendPasswordReset(clean);
+      await _auth.sendPasswordResetEmail(clean);
+      _startResetCooldown();
       AppFeedback.show(
         'forgot_password_sent_title'.tr,
         'forgot_password_sent_msg'.trParams(<String, String>{'email': clean}),
       );
     } on FirebaseAuthException catch (e) {
       if (e.code == 'user-not-found') {
+        _startResetCooldown();
         AppFeedback.show(
           'forgot_password_sent_title'.tr,
           'forgot_password_sent_msg'.trParams(<String, String>{'email': clean}),
         );
       } else {
-        AppFeedback.show('auth_failed'.tr, e.message ?? e.code, isError: true);
+        AppFeedback.show('auth_failed'.tr, _friendlyAuthError(e),
+            isError: true);
       }
     } catch (e) {
       AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
@@ -355,19 +438,19 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  Future<bool> signInWithEmail(String email, String password) {
+  Future signInWithEmail(String email, String password) {
     return _runAuth(() => _auth.signInWithEmail(email, password));
   }
 
-  Future<bool> registerWithEmail(String email, String password) {
+  Future registerWithEmail(String email, String password) {
     return _runAuth(() => _auth.registerWithEmail(email, password));
   }
 
-  Future<bool> signInWithGoogle() {
+  Future signInWithGoogle() {
     return _runAuth(() => _auth.signInWithGoogle());
   }
 
-  Future<void> submitEmail({
+  Future submitEmail({
     required String email,
     required String password,
     required bool register,
@@ -376,23 +459,26 @@ class AuthViewModel extends GetxController {
       return;
     }
     final String cleanEmail = email.trim();
-    if (!GetUtils.isEmail(cleanEmail) || password.length < 6) {
+    final String cleanPassword = password.trim();
+    if (!GetUtils.isEmail(cleanEmail) || cleanPassword.length < 6) {
       AppFeedback.show(
         'check_details'.tr,
-        'check_details_msg'.tr,
+        cleanPassword.isEmpty
+            ? 'Password cannot be empty.'
+            : 'Password must be at least 6 characters.',
         isError: true,
       );
       return;
     }
     final bool ok = register
-        ? await registerWithEmail(cleanEmail, password)
-        : await signInWithEmail(cleanEmail, password);
+        ? await registerWithEmail(cleanEmail, cleanPassword)
+        : await signInWithEmail(cleanEmail, cleanPassword);
     if (ok) {
       await finishLogin();
     }
   }
 
-  Future<void> submitGoogle() async {
+  Future submitGoogle() async {
     if (isLoading.value) {
       return;
     }
@@ -402,45 +488,38 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  Future<void> continueOffline() async {
+  Future continueOffline() async {
     if (isLoading.value) {
       return;
     }
     await finishLogin();
   }
 
-  Future<void> finishLogin() async {
+  Future finishLogin() async {
     await SharedPrefs.setSessionActive(true);
     Get.offAllNamed(AppRoutes.dashboard);
     if (isSignedIn) {
-      unawaited(Get.find<ExpenseViewModel>().syncWithCloud(silent: true));
+      unawaited(Get.find().syncWithCloud(silent: true));
     }
   }
 
-  Future<void> clearSessionAndGoToAuth() async {
+  Future clearSessionAndGoToAuth() async {
     if (isLoading.value) {
       return;
     }
     isLoading.value = true;
     try {
       if (isSignedIn) {
-        final bool safe =
-            await Get.find<ExpenseViewModel>().backupAndClearLocalData();
-        if (!safe) {
-          AppFeedback.show(
-            'backup_failed_title'.tr,
-            'backup_failed_msg'.tr,
-            isError: true,
-          );
-          return;
+        if (Get.isRegistered()) {
+          try {
+            await Get.find().backupAndClearLocalData();
+          } catch (_) {}
         }
       }
-
-      await _auth.signOut();
-      firebaseUser.value = null;
-      await SharedPrefs.clearSession();
-
       Get.offAllNamed(AppRoutes.login);
+      _auth.signOut().catchError((_) {});
+      SharedPrefs.clearSession().catchError((_) {});
+      firebaseUser.value = null;
       AppFeedback.show('signed_out'.tr, 'signed_out_msg'.tr);
     } catch (e) {
       AppFeedback.show('something_wrong'.tr, e.toString(), isError: true);
@@ -449,9 +528,8 @@ class AuthViewModel extends GetxController {
     }
   }
 
-  Future<void> signOut() => clearSessionAndGoToAuth();
-
-  Future<bool> _runAuth(Future<UserCredential?> Function() action) async {
+  Future signOut() => clearSessionAndGoToAuth();
+  Future _runAuth(Future<UserCredential?> Function() action) async {
     if (isLoading.value) {
       return false;
     }
@@ -464,7 +542,7 @@ class AuthViewModel extends GetxController {
       firebaseUser.value = credential.user;
       return true;
     } on FirebaseAuthException catch (e) {
-      AppFeedback.show('auth_failed'.tr, e.message ?? e.code, isError: true);
+      AppFeedback.show('auth_failed'.tr, _friendlyAuthError(e), isError: true);
       return false;
     } catch (e) {
       final String message = e.toString();

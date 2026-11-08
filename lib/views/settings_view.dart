@@ -7,9 +7,9 @@ import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
 import 'package:rider_expense_tracker/views/lock_passcode_view.dart';
 import 'package:rider_expense_tracker/views/selection_picker_view.dart';
-import 'package:rider_expense_tracker/views/wigdets/cloud_sheet.dart';
-import 'package:rider_expense_tracker/views/wigdets/pin_prompt_sheet.dart';
-import 'package:rider_expense_tracker/views/wigdets/searchable_picker.dart';
+import 'package:rider_expense_tracker/views/widgets/cloud_sheet.dart';
+import 'package:rider_expense_tracker/views/widgets/pin_prompt_sheet.dart';
+import 'package:rider_expense_tracker/views/widgets/searchable_picker.dart';
 
 class SettingsView extends StatelessWidget {
   const SettingsView({super.key});
@@ -388,3 +388,4 @@ class _SettingsTile extends StatelessWidget {
     );
   }
 }
+

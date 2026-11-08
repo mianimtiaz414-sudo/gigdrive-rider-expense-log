@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -15,6 +16,10 @@ import 'package:rider_expense_tracker/data/local/hive_storage_service.dart';
 import 'package:rider_expense_tracker/data/local/shared_prefs.dart';
 import 'package:rider_expense_tracker/data/local/translation_service.dart';
 import 'package:rider_expense_tracker/routes/app_routes.dart';
+
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+}
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -41,6 +46,13 @@ Future<void> main() async {
   Get.put<HiveStorageService>(hive, permanent: true);
   try {
     await Firebase.initializeApp();
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+    final FirebaseMessaging messaging = FirebaseMessaging.instance;
+    await messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
   } catch (e) {
     debugPrint(
         'Firebase initialization skipped or network layer unreachable: $e');

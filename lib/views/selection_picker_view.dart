@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
-import 'package:rider_expense_tracker/views/wigdets/searchable_picker.dart';
+import 'package:rider_expense_tracker/views/widgets/searchable_picker.dart';
 
 class SelectionPickerView extends StatelessWidget {
   const SelectionPickerView({
@@ -61,3 +61,4 @@ Future<String?> openPickerScreen({
   );
   return result;
 }
+

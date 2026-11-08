@@ -4,8 +4,8 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
-import 'package:rider_expense_tracker/views/wigdets/password_confirm_dialog.dart';
-import 'package:rider_expense_tracker/views/wigdets/pin_widgets.dart';
+import 'package:rider_expense_tracker/views/widgets/password_confirm_dialog.dart';
+import 'package:rider_expense_tracker/views/widgets/pin_widgets.dart';
 
 class LockPasscodeView extends StatefulWidget {
   const LockPasscodeView({super.key, this.purpose = PinPurpose.login});
@@ -299,3 +299,4 @@ class _LockPasscodeViewState extends State<LockPasscodeView> {
     });
   }
 }
+

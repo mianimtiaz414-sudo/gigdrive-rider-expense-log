@@ -15,7 +15,7 @@ class FirebaseAuthService {
 
   Stream<User?> get authStateChanges {
     if (!isAvailable) {
-      return Stream<User?>.empty();
+      return const Stream<User?>.empty();
     }
     return _auth.authStateChanges();
   }
@@ -76,6 +76,10 @@ class FirebaseAuthService {
     await _auth.sendPasswordResetEmail(email: email);
   }
 
+  Future<void> sendPasswordResetEmail(String email) async {
+    await sendPasswordReset(email);
+  }
+
   Future<void> reauthWithPassword(String password) async {
     _ensureAvailable();
     final User? user = currentUser;
@@ -88,6 +92,15 @@ class FirebaseAuthService {
       password: password,
     );
     await user.reauthenticateWithCredential(credential);
+  }
+
+  Future<bool> verifyCurrentPassword(String password) async {
+    try {
+      await reauthWithPassword(password);
+      return true;
+    } catch (_) {
+      return false;
+    }
   }
 
   Future<bool> reauthWithGoogle() async {
@@ -108,6 +121,10 @@ class FirebaseAuthService {
     );
     await user.reauthenticateWithCredential(credential);
     return true;
+  }
+
+  Future<bool> reauthenticateGoogle() async {
+    return await reauthWithGoogle();
   }
 
   Future<void> signOut() async {

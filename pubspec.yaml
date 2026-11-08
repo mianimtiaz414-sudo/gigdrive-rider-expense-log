@@ -26,6 +26,8 @@ dependencies:
   printing: ^5.13.1
   google_mobile_ads: ^9.2.0
   flutter_secure_storage: ^11.2.0
+  firebase_messaging: ^15.0.0
+
 
 dev_dependencies:
   flutter_test:

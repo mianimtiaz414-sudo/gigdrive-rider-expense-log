@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:get/get.dart';
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
-import 'package:rider_expense_tracker/views/wigdets/pin_widgets.dart';
+import 'package:rider_expense_tracker/views/widgets/pin_widgets.dart';
 
 class PinPromptSheet extends StatefulWidget {
   const PinPromptSheet({super.key});
@@ -127,3 +127,4 @@ class _PinPromptSheetState extends State<PinPromptSheet> {
     );
   }
 }
+
