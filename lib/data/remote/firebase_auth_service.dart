@@ -1,5 +1,6 @@
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_remote_config/firebase_remote_config.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
 class FirebaseAuthService {
@@ -17,15 +18,20 @@ class FirebaseAuthService {
     if (!isAvailable) {
       return const Stream<User?>.empty();
     }
+
     return _auth.authStateChanges();
   }
 
   bool _hasProvider(String providerId) {
     final User? user = currentUser;
+
     if (user == null) {
       return false;
     }
-    return user.providerData.any((UserInfo i) => i.providerId == providerId);
+
+    return user.providerData.any(
+      (UserInfo info) => info.providerId == providerId,
+    );
   }
 
   bool get usesPasswordProvider => _hasProvider('password');
@@ -35,14 +41,22 @@ class FirebaseAuthService {
   void _ensureAvailable() {
     if (!isAvailable) {
       throw StateError(
-        'Cloud services are not configured. Add google-services.json to enable sign-in.',
+        'Cloud services are not configured. '
+        'Add google-services.json to enable sign-in.',
       );
     }
   }
 
-  Future<UserCredential> signInWithEmail(String email, String password) async {
+  Future<UserCredential> signInWithEmail(
+    String email,
+    String password,
+  ) async {
     _ensureAvailable();
-    return _auth.signInWithEmailAndPassword(email: email, password: password);
+
+    return _auth.signInWithEmailAndPassword(
+      email: email,
+      password: password,
+    );
   }
 
   Future<UserCredential> registerWithEmail(
@@ -50,6 +64,7 @@ class FirebaseAuthService {
     String password,
   ) async {
     _ensureAvailable();
+
     return _auth.createUserWithEmailAndPassword(
       email: email,
       password: password,
@@ -58,21 +73,27 @@ class FirebaseAuthService {
 
   Future<UserCredential?> signInWithGoogle() async {
     _ensureAvailable();
+
     final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
     if (googleUser == null) {
       return null;
     }
+
     final GoogleSignInAuthentication googleAuth =
         await googleUser.authentication;
+
     final OAuthCredential credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
+
     return _auth.signInWithCredential(credential);
   }
 
   Future<void> sendPasswordReset(String email) async {
     _ensureAvailable();
+
     await _auth.sendPasswordResetEmail(email: email);
   }
 
@@ -82,15 +103,19 @@ class FirebaseAuthService {
 
   Future<void> reauthWithPassword(String password) async {
     _ensureAvailable();
+
     final User? user = currentUser;
     final String? email = user?.email;
+
     if (user == null || email == null) {
       throw StateError('No signed-in account to verify.');
     }
+
     final AuthCredential credential = EmailAuthProvider.credential(
       email: email,
       password: password,
     );
+
     await user.reauthenticateWithCredential(credential);
   }
 
@@ -98,6 +123,8 @@ class FirebaseAuthService {
     try {
       await reauthWithPassword(password);
       return true;
+    } on FirebaseAuthException {
+      return false;
     } catch (_) {
       return false;
     }
@@ -105,35 +132,77 @@ class FirebaseAuthService {
 
   Future<bool> reauthWithGoogle() async {
     _ensureAvailable();
+
     final User? user = currentUser;
+
     if (user == null) {
       throw StateError('No signed-in account to verify.');
     }
+
     final GoogleSignInAccount? googleUser = await _googleSignIn.signIn();
+
     if (googleUser == null) {
       return false;
     }
+
     final GoogleSignInAuthentication googleAuth =
         await googleUser.authentication;
+
     final OAuthCredential credential = GoogleAuthProvider.credential(
       accessToken: googleAuth.accessToken,
       idToken: googleAuth.idToken,
     );
+
     await user.reauthenticateWithCredential(credential);
+
     return true;
   }
 
   Future<bool> reauthenticateGoogle() async {
-    return await reauthWithGoogle();
+    return reauthWithGoogle();
+  }
+
+  Future<bool> fetchAdVisibility() async {
+    if (!isAvailable) {
+      return true;
+    }
+
+    try {
+      final FirebaseRemoteConfig remoteConfig = FirebaseRemoteConfig.instance;
+
+      await remoteConfig.setConfigSettings(
+        RemoteConfigSettings(
+          fetchTimeout: const Duration(seconds: 15),
+          minimumFetchInterval: const Duration(hours: 1),
+        ),
+      );
+
+      await remoteConfig.setDefaults(
+        <String, dynamic>{
+          'show_ads': true,
+        },
+      );
+
+      await remoteConfig.fetchAndActivate();
+
+      return remoteConfig.getBool('show_ads');
+    } catch (_) {
+      // Remote Config fail hone par ads default enabled rahenge.
+      return true;
+    }
   }
 
   Future<void> signOut() async {
     if (!isAvailable) {
       return;
     }
+
     try {
       await _googleSignIn.signOut();
-    } catch (_) {}
+    } catch (_) {
+      // Firebase sign-out ko phir bhi proceed karne dena hai.
+    }
+
     await _auth.signOut();
   }
 }

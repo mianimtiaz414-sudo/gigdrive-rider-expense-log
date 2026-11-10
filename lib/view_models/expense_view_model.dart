@@ -52,10 +52,12 @@ class ExpenseViewModel extends GetxController {
   @override
   void onInit() {
     super.onInit();
+
     _recomputeWorker = everAll(
       <RxInterface<dynamic>>[logs, selectedMonth],
       (dynamic _) => _recompute(),
     );
+
     loadLogs();
     loadBannerAd();
     loadInterstitialAd();
@@ -64,6 +66,7 @@ class ExpenseViewModel extends GetxController {
   @override
   void onReady() {
     super.onReady();
+
     if (_repository.isCloudReady) {
       syncWithCloud(silent: true);
     }
@@ -72,12 +75,15 @@ class ExpenseViewModel extends GetxController {
   @override
   void onClose() {
     _recomputeWorker.dispose();
+
     earningsCtrl.dispose();
     fuelCtrl.dispose();
     repairsCtrl.dispose();
     mileageCtrl.dispose();
+
     myBanner?.dispose();
     _interstitialAd?.dispose();
+
     super.onClose();
   }
 
@@ -96,6 +102,7 @@ class ExpenseViewModel extends GetxController {
         },
       ),
     );
+
     myBanner!.load();
   }
 
@@ -121,15 +128,21 @@ class ExpenseViewModel extends GetxController {
       _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdDismissedFullScreenContent: (ad) {
           ad.dispose();
+          _interstitialAd = null;
+          _isInterstitialAdReady = false;
           loadInterstitialAd();
           onAdDismissed();
         },
         onAdFailedToShowFullScreenContent: (ad, error) {
           ad.dispose();
+          _interstitialAd = null;
+          _isInterstitialAdReady = false;
           loadInterstitialAd();
           onAdDismissed();
         },
       );
+
+      _isInterstitialAdReady = false;
       _interstitialAd!.show();
     } else {
       onAdDismissed();
@@ -150,7 +163,9 @@ class ExpenseViewModel extends GetxController {
       symbol: _settings.currencySymbol,
       decimalDigits: 2,
     );
+
     final String sign = value < 0 ? '-' : '';
+
     return '\u200E$sign${f.format(value.abs())}';
   }
 
@@ -181,12 +196,14 @@ class ExpenseViewModel extends GetxController {
     if (!canGoNextMonth) {
       return;
     }
+
     final DateTime m = selectedMonth.value;
     selectedMonth.value = DateTime(m.year, m.month + 1);
   }
 
   void loadLogs() {
     isLoading.value = true;
+
     try {
       logs.assignAll(_repository.getLocalLogs());
     } finally {
@@ -196,9 +213,11 @@ class ExpenseViewModel extends GetxController {
 
   void _recompute() {
     final DateTime m = selectedMonth.value;
+
     final List<ExpenseModel> filtered = logs
-        .where((ExpenseModel l) =>
-            l.date.year == m.year && l.date.month == m.month)
+        .where(
+          (ExpenseModel l) => l.date.year == m.year && l.date.month == m.month,
+        )
         .toList()
       ..sort((ExpenseModel a, ExpenseModel b) {
         final int byDate = b.date.compareTo(a.date);
@@ -207,6 +226,7 @@ class ExpenseViewModel extends GetxController {
 
     double earned = 0;
     double spent = 0;
+
     for (final ExpenseModel l in filtered) {
       earned += l.earnings;
       spent += l.totalExpenses;
@@ -220,10 +240,15 @@ class ExpenseViewModel extends GetxController {
 
   Future<void> deleteLog(String id) async {
     logs.removeWhere((ExpenseModel l) => l.id == id);
+
     try {
       await _repository.deleteLog(id);
     } catch (e) {
-      AppFeedback.show('delete_failed'.tr, e.toString(), isError: true);
+      AppFeedback.show(
+        'delete_failed'.tr,
+        e.toString(),
+        isError: true,
+      );
     }
   }
 
@@ -238,21 +263,31 @@ class ExpenseViewModel extends GetxController {
   String? validateNumber(String? value, String labelKey) {
     final String text = value?.trim() ?? '';
     final String label = labelKey.tr;
+
     if (text.isEmpty) {
-      return 'enter_value'.trParams(<String, String>{'field': label});
+      return 'enter_value'.trParams(
+        <String, String>{'field': label},
+      );
     }
+
     final double? parsed = double.tryParse(text);
+
     if (parsed == null) {
       return 'valid_number'.tr;
     }
+
     if (parsed < 0) {
-      return 'no_negative'.trParams(<String, String>{'field': label});
+      return 'no_negative'.trParams(
+        <String, String>{'field': label},
+      );
     }
+
     return null;
   }
 
   Future<void> pickDate(BuildContext context) async {
     final DateTime today = _dayOf(DateTime.now());
+
     final DateTime? picked = await showDatePicker(
       context: context,
       initialDate:
@@ -273,6 +308,7 @@ class ExpenseViewModel extends GetxController {
         );
       },
     );
+
     if (picked != null) {
       selectedDate.value = _dayOf(picked);
     }
@@ -284,9 +320,12 @@ class ExpenseViewModel extends GetxController {
     if (isSaving.value) {
       return;
     }
+
     isSaving.value = true;
+
     try {
       final DateTime d = selectedDate.value;
+
       final ExpenseModel log = ExpenseModel(
         id: DateTime.now().microsecondsSinceEpoch.toString(),
         date: DateTime(d.year, d.month, d.day),
@@ -295,13 +334,21 @@ class ExpenseViewModel extends GetxController {
         otherRepairs: _parse(repairsCtrl),
         mileage: _parse(mileageCtrl),
       );
+
       await _repository.addLog(log, onSynced: loadLogs);
+
       loadLogs();
       selectedMonth.value = _monthOf(log.date);
+
       Get.back();
+
       AppFeedback.show('saved'.tr, 'log_added'.tr);
     } catch (e) {
-      AppFeedback.show('could_not_save'.tr, e.toString(), isError: true);
+      AppFeedback.show(
+        'could_not_save'.tr,
+        e.toString(),
+        isError: true,
+      );
     } finally {
       isSaving.value = false;
     }
@@ -311,9 +358,12 @@ class ExpenseViewModel extends GetxController {
     if (isExporting.value) {
       return;
     }
+
     isExporting.value = true;
+
     try {
       final List<ExpenseModel> records = _repository.getLocalLogs();
+
       if (records.isEmpty) {
         AppFeedback.show(
           'pdf_no_data_title'.tr,
@@ -324,6 +374,7 @@ class ExpenseViewModel extends GetxController {
       }
 
       final DateTime now = DateTime.now();
+
       final Uint8List bytes = await PdfReportService.buildLedgerReport(
         logs: records,
         currencyCode: _settings.currency.currencyCode,
@@ -332,61 +383,127 @@ class ExpenseViewModel extends GetxController {
       );
 
       final String stamp = DateFormat('yyyyMMdd_HHmm', 'en').format(now);
+
       await Printing.layoutPdf(
         name: 'rider_ledger_$stamp.pdf',
         onLayout: (PdfPageFormat format) async => bytes,
       );
     } catch (e) {
-      AppFeedback.show('pdf_failed'.tr, e.toString(), isError: true);
+      AppFeedback.show(
+        'pdf_failed'.tr,
+        e.toString(),
+        isError: true,
+      );
     } finally {
       isExporting.value = false;
     }
   }
 
-  Future syncWithCloud({bool silent = false}) async {
+  Future<void> syncWithCloud({bool silent = false}) async {
     if (!_repository.isCloudReady) {
       if (!silent) {
-        AppFeedback.show('sign_in_required'.tr, 'sign_in_required_msg'.tr,
-            isError: true);
+        AppFeedback.show(
+          'sign_in_required'.tr,
+          'sign_in_required_msg'.tr,
+          isError: true,
+        );
       }
       return;
     }
+
     if (isSyncing.value) {
       return;
     }
+
     isSyncing.value = true;
+
     try {
       final int pushed = await _repository.syncPending();
       final int restored = await _repository.restoreFromCloud();
+
       await _settings.syncFromCloud();
+
       loadLogs();
+
       if (!silent) {
         AppFeedback.show(
           'sync_complete'.tr,
-          'sync_complete_msg'.trParams(<String, String>{
-            'pushed': '$pushed',
-            'restored': '$restored',
-          }),
+          'sync_complete_msg'.trParams(
+            <String, String>{
+              'pushed': '$pushed',
+              'restored': '$restored',
+            },
+          ),
         );
       }
     } catch (e) {
       if (!silent) {
-        AppFeedback.show('sync_failed'.tr, e.toString(), isError: true);
+        AppFeedback.show(
+          'sync_failed'.tr,
+          e.toString(),
+          isError: true,
+        );
       }
     } finally {
       isSyncing.value = false;
     }
   }
 
-  Future backupAndClearLocalData() async {
-    if (_repository.isCloudReady) {
-      await _repository.syncPending();
-    }
-    if (_repository.pendingCount > 0) {
+  Future<bool> backupAndClearLocalData() async {
+    debugPrint('LOGOUT BACKUP: Started');
+    debugPrint('Cloud ready: ${_repository.isCloudReady}');
+    debugPrint('Syncing: ${isSyncing.value}');
+    debugPrint('Pending logs: ${_repository.pendingCount}');
+
+    if (!_repository.isCloudReady) {
+      debugPrint('LOGOUT BACKUP FAILED: Cloud is not ready');
       return false;
     }
-    await _repository.clearLocal();
-    loadLogs();
-    return true;
+
+    if (isSyncing.value) {
+      debugPrint('LOGOUT BACKUP: Waiting for existing sync');
+
+      final DateTime deadline = DateTime.now().add(const Duration(seconds: 30));
+
+      while (isSyncing.value && DateTime.now().isBefore(deadline)) {
+        await Future<void>.delayed(
+          const Duration(milliseconds: 200),
+        );
+      }
+
+      if (isSyncing.value) {
+        debugPrint('LOGOUT BACKUP FAILED: Sync wait timed out');
+        return false;
+      }
+    }
+
+    isSyncing.value = true;
+
+    try {
+      debugPrint('LOGOUT BACKUP: Uploading pending logs');
+
+      await _repository.syncPending();
+
+      debugPrint('Pending logs after sync: ${_repository.pendingCount}');
+      debugPrint('Last sync error: ${_repository.lastSyncError}');
+
+      if (_repository.pendingCount > 0) {
+        debugPrint('LOGOUT BACKUP FAILED: Some logs are still pending');
+        return false;
+      }
+
+      await _repository.clearLocal();
+
+      debugPrint('LOGOUT BACKUP: Completed successfully');
+
+      loadLogs();
+      return true;
+    } catch (e, stackTrace) {
+      debugPrint('LOGOUT BACKUP EXCEPTION: $e');
+      debugPrintStack(stackTrace: stackTrace);
+      return false;
+    } finally {
+      isSyncing.value = false;
+    }
   }
 }

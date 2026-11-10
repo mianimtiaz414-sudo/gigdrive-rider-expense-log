@@ -1,3 +1,4 @@
+
 name: rider_expense_tracker
 description: Rider Expense & Cash Tracker - log earnings, fuel, repairs and mileage.
 publish_to: 'none'
@@ -27,7 +28,7 @@ dependencies:
   google_mobile_ads: ^9.2.0
   flutter_secure_storage: ^11.2.0
   firebase_messaging: ^15.0.0
-
+  firebase_remote_config: ^5.5.0
 
 dev_dependencies:
   flutter_test:
