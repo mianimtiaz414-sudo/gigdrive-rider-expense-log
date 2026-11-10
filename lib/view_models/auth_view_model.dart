@@ -45,6 +45,11 @@ class AuthViewModel extends GetxController {
   final Rxn<User> firebaseUser = Rxn<User>();
   final RxBool shouldShowAds = true.obs;
 
+  // Monetization initialization complete hone ka signal.
+  final Completer<bool> _monetizationCompleter = Completer<bool>();
+
+  Future<bool> get monetizationReady => _monetizationCompleter.future;
+
   String _firstPin = '';
   bool _busy = false;
 
@@ -143,24 +148,29 @@ class AuthViewModel extends GetxController {
   }
 
   Future<void> initMonetizationEngine() async {
-    bool isAdEnabledOnServer = true;
+    bool adsEnabled = true;
 
     try {
-      isAdEnabledOnServer = await _auth.fetchAdVisibility();
+      adsEnabled = await _auth.fetchAdVisibility();
     } catch (_) {
-      isAdEnabledOnServer = true;
+      adsEnabled = true;
     }
 
     // Premium feature abhi app mein enabled nahi hai.
 
-    shouldShowAds.value = isAdEnabledOnServer;
+    shouldShowAds.value = adsEnabled;
 
-    if (shouldShowAds.value) {
+    if (adsEnabled) {
       try {
         await MobileAds.instance.initialize();
       } catch (_) {
-        // Ads initialization failure should not stop app startup.
+        adsEnabled = false;
+        shouldShowAds.value = false;
       }
+    }
+
+    if (!_monetizationCompleter.isCompleted) {
+      _monetizationCompleter.complete(adsEnabled);
     }
   }
 

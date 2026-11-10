@@ -1,14 +1,18 @@
-import 'package:google_mobile_ads/google_mobile_ads.dart';
+import 'dart:async';
 import 'dart:typed_data';
+
 import 'package:flutter/material.dart';
 import 'package:get/get.dart';
+import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:intl/intl.dart';
 import 'package:pdf/pdf.dart' show PdfPageFormat;
 import 'package:printing/printing.dart' show Printing;
+
 import 'package:rider_expense_tracker/core/app_theme.dart';
 import 'package:rider_expense_tracker/data/local/pdf_report_service.dart';
 import 'package:rider_expense_tracker/data/models/expense_model.dart';
 import 'package:rider_expense_tracker/data/repositories/expense_repository.dart';
+import 'package:rider_expense_tracker/view_models/auth_view_model.dart';
 import 'package:rider_expense_tracker/view_models/settings_view_model.dart';
 
 class ExpenseViewModel extends GetxController {
@@ -22,6 +26,7 @@ class ExpenseViewModel extends GetxController {
 
   InterstitialAd? _interstitialAd;
   bool _isInterstitialAdReady = false;
+  bool _adsEnabled = false;
 
   final RxList<ExpenseModel> logs = <ExpenseModel>[].obs;
   final RxList<ExpenseModel> monthLogs = <ExpenseModel>[].obs;
@@ -59,8 +64,33 @@ class ExpenseViewModel extends GetxController {
     );
 
     loadLogs();
-    loadBannerAd();
-    loadInterstitialAd();
+
+    // Ads ko AuthViewModel ki initialization ke baad load karein.
+    unawaited(_initializeAds());
+  }
+
+  Future<void> _initializeAds() async {
+    try {
+      final AuthViewModel auth = Get.find<AuthViewModel>();
+
+      final bool ready = await auth.monetizationReady;
+
+      if (!ready || isClosed) {
+        return;
+      }
+
+      _adsEnabled = auth.shouldShowAds.value;
+
+      if (!_adsEnabled) {
+        return;
+      }
+
+      loadBannerAd();
+      loadInterstitialAd();
+    } catch (_) {
+      // Ads setup fail hone par app ka baqi kaam chalta rahega.
+      _adsEnabled = false;
+    }
   }
 
   @override
@@ -88,16 +118,26 @@ class ExpenseViewModel extends GetxController {
   }
 
   void loadBannerAd() {
+    if (!_adsEnabled || isClosed || myBanner != null) {
+      return;
+    }
+
     myBanner = BannerAd(
       adUnitId: 'ca-app-pub-2175738720080309/4304611395',
       size: AdSize.banner,
       request: const AdRequest(),
       listener: BannerAdListener(
         onAdLoaded: (ad) {
+          if (isClosed || !_adsEnabled) {
+            ad.dispose();
+            return;
+          }
+
           isAdLoaded.value = true;
         },
         onAdFailedToLoad: (ad, error) {
           ad.dispose();
+          myBanner = null;
           isAdLoaded.value = false;
         },
       ),
@@ -107,11 +147,20 @@ class ExpenseViewModel extends GetxController {
   }
 
   void loadInterstitialAd() {
+    if (!_adsEnabled || isClosed || _interstitialAd != null) {
+      return;
+    }
+
     InterstitialAd.load(
       adUnitId: 'ca-app-pub-2175738720080309/8052284713',
       request: const AdRequest(),
       adLoadCallback: InterstitialAdLoadCallback(
         onAdLoaded: (ad) {
+          if (isClosed || !_adsEnabled) {
+            ad.dispose();
+            return;
+          }
+
           _interstitialAd = ad;
           _isInterstitialAdReady = true;
         },
@@ -124,6 +173,11 @@ class ExpenseViewModel extends GetxController {
   }
 
   void showInterstitialAd({required Function onAdDismissed}) {
+    if (!_adsEnabled) {
+      onAdDismissed();
+      return;
+    }
+
     if (_isInterstitialAdReady && _interstitialAd != null) {
       _interstitialAd!.fullScreenContentCallback = FullScreenContentCallback(
         onAdDismissedFullScreenContent: (ad) {

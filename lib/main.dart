@@ -1,6 +1,5 @@
 import 'dart:async';
 
-import 'package:google_mobile_ads/google_mobile_ads.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:flutter/material.dart';
@@ -22,11 +21,6 @@ Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  try {
-    await MobileAds.instance.initialize();
-  } catch (e) {
-    debugPrint('Google Mobile Ads SDK initialization failed: $e');
-  }
 
   SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
     statusBarColor: Colors.transparent,
@@ -41,12 +35,19 @@ Future<void> main() async {
 
   await initializeDateFormatting();
   await SharedPrefs.init();
+
   final HiveStorageService hive = await HiveStorageService().init();
   Get.put<HiveStorageService>(hive, permanent: true);
+
   try {
     await Firebase.initializeApp();
-    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
+
+    FirebaseMessaging.onBackgroundMessage(
+      _firebaseMessagingBackgroundHandler,
+    );
+
     final FirebaseMessaging messaging = FirebaseMessaging.instance;
+
     await messaging.requestPermission(
       alert: true,
       badge: true,
@@ -54,7 +55,8 @@ Future<void> main() async {
     );
   } catch (e) {
     debugPrint(
-        'Firebase initialization skipped or network layer unreachable: $e');
+      'Firebase initialization skipped or network layer unreachable: $e',
+    );
   }
 
   runApp(const RiderExpenseApp());
